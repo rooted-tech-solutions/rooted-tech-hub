@@ -1,6 +1,7 @@
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import PrintButton from "@/components/ui/PrintButton";
 import { annualValue, fmtMoney, quoteNumber } from "@/app/(dashboard)/dashboard/quotes/lineItems";
 import { contractClauses, type ContractSnapshot } from "@/app/(dashboard)/dashboard/contracts/contractTerms";
 import type { LineItem } from "@/app/(dashboard)/dashboard/quotes/actions";
@@ -76,14 +77,17 @@ export default async function SignContractPage({ params }: { params: { token: st
       <div className="max-w-4xl mx-auto">
 
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-8 print:hidden">
           <Image src="/logo.png" alt="Rooted Tech Solutions" width={300} height={138} className="h-14 w-auto" priority />
-          <div className="text-right">
-            <p className="text-xs font-semibold text-brand-dark uppercase tracking-wide">Client Package</p>
-            <p className="text-xs text-gray-500 mt-0.5">
-              {snapshot.client_company || snapshot.client_name || "Client"}
-              {snapshot.project_name ? ` — ${snapshot.project_name}` : ""}
-            </p>
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <p className="text-xs font-semibold text-brand-dark uppercase tracking-wide">Client Package</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {snapshot.client_company || snapshot.client_name || "Client"}
+                {snapshot.project_name ? ` — ${snapshot.project_name}` : ""}
+              </p>
+            </div>
+            <PrintButton label="Download PDF" />
           </div>
         </div>
 
@@ -341,7 +345,7 @@ export default async function SignContractPage({ params }: { params: { token: st
                     <p className="text-xs text-gray-400">{fmtDateTime(contract.signed_at)}</p>
                   </div>
                 ) : (
-                  <div className="flex flex-col items-start gap-3">
+                  <div className="flex flex-col items-start gap-3 print:hidden">
                     <p className="text-xs text-gray-500 leading-relaxed">
                       By clicking the button below, you confirm that you have read and agree to all terms outlined in this service agreement and the accompanying quote. Your electronic signature has the same legal effect as a handwritten signature under the E-SIGN Act.
                     </p>
@@ -357,7 +361,7 @@ export default async function SignContractPage({ params }: { params: { token: st
 
         </div>
 
-        <p className="text-center text-xs text-gray-400 mt-8 mb-4">Rooted Tech Solutions · rootedtechsolutions.com</p>
+        <p className="text-center text-xs text-gray-400 mt-8 mb-4 print:hidden">Rooted Tech Solutions · rootedtechsolutions.com</p>
       </div>
     </div>
   );
