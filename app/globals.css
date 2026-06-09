@@ -3,25 +3,20 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --background: #F7F4EE;
+  --foreground: #1B4332;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+@media print {
+  /* Hide sidebar, nav, and action buttons — print only the document */
+  nav, aside, [data-sidebar], .print\:hidden { display: none !important; }
+  body { background: white !important; }
+  /* Remove shadows and rounded corners for clean print */
+  .rounded-xl, .rounded-2xl { border-radius: 0 !important; }
+  .shadow-\[.*\] { box-shadow: none !important; }
 }
