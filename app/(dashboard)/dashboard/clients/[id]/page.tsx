@@ -5,7 +5,7 @@ import { deleteClientRecord, updateClientStageFromForm } from "../actions";
 import { StatusBadge } from "../../quotes/statusBadge";
 import { annualValue, fmtMoney, renewalLabel } from "../../quotes/lineItems";
 import { computeLifecycle, LIFECYCLE_STEPS, STAGE_ORDER } from "../lifecycle";
-import { updateQuoteStatus, deleteQuoteRecord } from "../../quotes/actions";
+import { deleteQuoteRecord } from "../../quotes/actions";
 import { deleteInvoiceRecord, markInvoicePaid } from "../../invoices/actions";
 import { deleteContractRecord, generateContractFromQuote } from "../../contracts/actions";
 import { deleteSowRecord } from "../../scope/actions";
@@ -330,10 +330,6 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
               <div className="divide-y divide-brand-light flex-1">
                 {quotes.map((quote) => {
                   const hasContract = contractedQuoteIds.has(quote.id);
-                  async function handleUpdateStatus(formData: FormData) {
-                    "use server";
-                    await updateQuoteStatus(quote.id, formData.get("status") as string, client.id);
-                  }
                   async function handleDeleteQuote() {
                     "use server";
                     await deleteQuoteRecord(quote.id, `/dashboard/clients/${client.id}`);

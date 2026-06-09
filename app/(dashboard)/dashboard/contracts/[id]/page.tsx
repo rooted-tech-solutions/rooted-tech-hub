@@ -2,10 +2,8 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { deleteContractRecord, sendContract } from "../actions";
-import { fmtMoney } from "../../quotes/lineItems";
+import { deleteContractRecord } from "../actions";
 import { contractClauses, type ContractSnapshot } from "../contractTerms";
-import PrintButton from "@/components/ui/PrintButton";
 import CopyButton from "@/components/ui/CopyButton";
 
 function fmtDateTime(value: string | null) {
@@ -43,11 +41,6 @@ export default async function ContractDetailPage({ params, searchParams }: { par
   const host = headersList.get("host") ?? "localhost:3003";
   const proto = headersList.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const signLink = `${proto}://${host}/sign/${contract.sign_token}`;
-
-  async function handleSend() {
-    "use server";
-    await sendContract(contract!.id);
-  }
 
   async function handleDelete() {
     "use server";
