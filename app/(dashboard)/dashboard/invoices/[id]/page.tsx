@@ -246,8 +246,11 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
               and we will provide you with our account details for ACH payment.
             </p>
             <div className="mt-2.5 flex items-center gap-4 text-xs text-brand-mid font-medium">
-              <a href="mailto:hello@rootedtechsolutions.com" className="hover:text-brand-dark transition-colors">
-                hello@rootedtechsolutions.com
+              <a href="mailto:rootedtechsolutions@gmail.com" className="hover:text-brand-dark transition-colors">
+                rootedtechsolutions@gmail.com
+              </a>
+              <a href="tel:3192438139" className="hover:text-brand-dark transition-colors">
+                319-243-8139
               </a>
             </div>
           </div>
