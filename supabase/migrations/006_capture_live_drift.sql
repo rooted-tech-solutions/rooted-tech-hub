@@ -1,0 +1,53 @@
+-- ============================================================
+-- Migration 006: Capture schema that drifted into the live DB
+-- ============================================================
+-- Some objects were created directly in the Supabase dashboard and never
+-- written down here. Rebuilding the database from this folder would have
+-- produced an app that fails at runtime. This migration captures them.
+--
+-- Everything below is written to be a NO-OP against the live database —
+-- it only fills the gap for a fresh rebuild.
+
+-- ------------------------------------------------------------
+-- clients.lifecycle_stage
+-- ------------------------------------------------------------
+-- Written by updateClientStage() in dashboard/clients/actions.ts and read
+-- back by the client detail page as a manual override for the computed
+-- lifecycle. Verified present in the live DB on 2026-08-31.
+--
+-- Deliberately no CHECK constraint: the live column has none, and adding
+-- one here would make this migration change production rather than
+-- describe it. The valid values are owned by MANUAL_STAGE_INFO in
+-- dashboard/clients/lifecycle.ts:
+--   prospect | quoted | quote_accepted | deposit_paid | final_paid
+--   | active | renewal_due
+-- A null means "no manual override" — fall through to computeLifecycle().
+
+alter table public.clients
+  add column if not exists lifecycle_stage text;
+
+-- ------------------------------------------------------------
+-- STILL MISSING: get_client_package_by_token(uuid)
+-- ------------------------------------------------------------
+-- The client-facing signing page (app/sign/[token]/page.tsx) runs on this
+-- RPC. It exists in the live DB but its source was never captured here.
+-- Migration 002 defines get_contract_by_token instead, which nothing calls —
+-- the package version supersedes it, returning the quote and SOW rows
+-- alongside the contract.
+--
+-- It is NOT reconstructed from the calling code on purpose. A plausible but
+-- subtly wrong `create or replace` would silently replace a working function
+-- and break signing for real clients.
+--
+-- To capture it, run this in the Supabase SQL editor and paste the output
+-- below, verbatim:
+--
+--   select pg_get_functiondef(p.oid)
+--   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+--   where n.nspname = 'public'
+--     and p.proname = 'get_client_package_by_token';
+--
+-- Then re-add the grant that goes with it:
+--
+--   grant execute on function public.get_client_package_by_token(uuid)
+--     to anon, authenticated;
