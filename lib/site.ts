@@ -15,9 +15,11 @@ export const SITE = {
     "Custom software for small businesses that have outgrown spreadsheets. " +
     "Built to fit how you already work, then looked after month to month.",
 
-  // ← Update once the domain is purchased. Also gates Resend DNS
-  //   verification, Turnstile registration, and Stripe activation.
-  domain: "https://rootedtechsolutions.com",
+  // The live site. Feeds metadata, the sitemap, and OpenGraph tags, so it must
+  // always point somewhere that actually resolves — a placeholder here means
+  // social link previews reference a dead address.
+  // ← Change to https://rootedtechsolutions.com once that domain is bought.
+  domain: "https://rootedtechsolutions.vercel.app",
 
   email: "rootedtechsolutions@gmail.com",
   // Widened to string: these are empty placeholders, and `as const` would type
