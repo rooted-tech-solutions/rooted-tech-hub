@@ -72,7 +72,7 @@ export async function submitInquiry(
     return {
       error: known
         ? error.message
-        : "Something went wrong sending that. Please email me directly instead.",
+        : "Something went wrong sending that. Please email us directly instead.",
     };
   }
 

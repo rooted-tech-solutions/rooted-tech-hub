@@ -12,7 +12,7 @@ export default function PrivacyPage() {
     <LegalPage title="Privacy Policy" updated="August 31, 2026">
       <Section heading="Who this covers">
         <p>
-          {SITE.name} is a one-person software business. This policy explains what information is
+          {SITE.name} is a small software business. This policy explains what information is
           collected through this website and the client portal, why, and what happens to it. Any
           questions, email{" "}
           <a href={`mailto:${SITE.email}`} className="font-medium text-site-accent hover:underline">
@@ -46,7 +46,7 @@ export default function PrivacyPage() {
         <p>
           There are no advertising trackers, no analytics profiling, and no third-party cookies on
           this site. There is no mailing list — your details are not added to one, and you will not
-          receive marketing email as a result of contacting me.
+          receive marketing email as a result of contacting us.
         </p>
         <p>
           Payment card details are never seen or stored. Payments are handled entirely by Stripe on

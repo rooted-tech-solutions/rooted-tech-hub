@@ -3,7 +3,7 @@ import Link from "next/link";
 import { SITE } from "@/lib/site";
 
 const links = [
-  { label: "What I build", href: "#services" },
+  { label: "What we build", href: "#services" },
   { label: "How it works", href: "#process" },
   { label: "Recent work", href: "#work" },
 ];

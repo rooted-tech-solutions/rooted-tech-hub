@@ -47,7 +47,7 @@ export default function ContactForm() {
         </div>
         <p className="mt-6 text-2xl font-bold text-site-ink">Got it — thank you.</p>
         <p className="mx-auto mt-3 max-w-md text-[17px] leading-relaxed text-site-body">
-          I read every one of these myself and will get back to you within one business day.
+          We read every one of these ourselves and will get back to you within one business day.
         </p>
       </div>
     );
@@ -151,7 +151,7 @@ export default function ContactForm() {
           name="message"
           rows={5}
           className={`${inputClass} resize-y`}
-          placeholder="Tell me how the work moves through your business today, and where it goes wrong. Rough notes are fine."
+          placeholder="Tell us how the work moves through your business today, and where it goes wrong. Rough notes are fine."
         />
       </div>
 

@@ -47,7 +47,7 @@ const PROCESS = [
   {
     step: "02",
     title: "You get a scope of work",
-    body: "A written document listing exactly what is being built, what is not, and what I need from you. No surprises later.",
+    body: "A written document listing exactly what is being built, what is not, and what we need from you. No surprises later.",
   },
   {
     step: "03",
@@ -56,7 +56,7 @@ const PROCESS = [
   },
   {
     step: "04",
-    title: "I build it",
+    title: "We build it",
     body: "Half up front, half on delivery and acceptance. You see progress as it goes, not at the very end.",
   },
   {
@@ -84,7 +84,7 @@ export default function MarketingHome() {
             Software that fits how you work.
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-site-body sm:text-xl">
-            I build reliable systems that make operations more efficient: automating manual
+            We build reliable systems that make operations more efficient: automating manual
             processes, consolidating your information into a single source of truth, and
             providing the visibility to make confident decisions.
           </p>
@@ -100,29 +100,29 @@ export default function MarketingHome() {
               href="#services"
               className="inline-flex min-h-[52px] w-full items-center justify-center rounded-full bg-white px-8 text-base font-semibold text-site-ink shadow-soft transition-colors hover:bg-site-wash sm:w-auto"
             >
-              See what I build
+              See what we build
             </a>
           </div>
 
           <p className="mx-auto mt-6 max-w-md text-[15px] leading-relaxed text-site-mute">
-            The first conversation is free. Send the form with no obligation and I&rsquo;ll
+            The first conversation is free. Send the form with no obligation and we&rsquo;ll
             follow up with you personally, at no cost.
           </p>
         </div>
       </section>
 
       {/* ---------------------------------------------------------------- */}
-      {/* What I build                                                     */}
+      {/* What we build                                                     */}
       {/* ---------------------------------------------------------------- */}
       <section id="services" className="scroll-mt-24 bg-white py-24 lg:py-32">
         <div className="mx-auto max-w-6xl px-6 lg:px-8">
           <div className="mx-auto max-w-2xl text-center">
             <h2 className="text-3xl font-bold tracking-tight text-site-ink sm:text-4xl lg:text-5xl">
-              What I build
+              What we build
             </h2>
             <p className="mt-5 text-lg leading-relaxed text-site-body">
-              A complete application, start to finish. One person doing the whole job means
-              nothing gets lost in a handoff between agencies.
+              A complete application, start to finish. One team from first call to handover means
+              nothing gets lost between agencies or contractors.
             </p>
           </div>
 
@@ -264,7 +264,7 @@ export default function MarketingHome() {
             </div>
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-white/40">
-                What I built
+                What we built
               </p>
               <p className="mt-3 text-[17px] leading-relaxed text-white/75">
                 A live availability calendar per machine with travel time built in, online quotes
@@ -301,11 +301,11 @@ export default function MarketingHome() {
         <div className="mx-auto max-w-2xl px-6 lg:px-8">
           <div className="text-center">
             <h2 className="text-3xl font-bold tracking-tight text-site-ink sm:text-4xl lg:text-5xl">
-              Tell me what you&rsquo;re dealing with
+              Tell us what you&rsquo;re dealing with
             </h2>
             <p className="mt-5 text-lg leading-relaxed text-site-body">
               You do not need a spec or a budget worked out. A rough description of the problem is
-              plenty to start with — I will tell you honestly whether it is something I can help
+              plenty to start with — we will tell you honestly whether it is something we can help
               with.
             </p>
           </div>

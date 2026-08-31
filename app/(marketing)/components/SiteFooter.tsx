@@ -38,7 +38,7 @@ export default function SiteFooter() {
           <div className="flex gap-12 text-[15px]">
             <div className="flex flex-col gap-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-white/40">Site</p>
-              <a href="#services" className="hover:text-white">What I build</a>
+              <a href="#services" className="hover:text-white">What we build</a>
               <a href="#process" className="hover:text-white">How it works</a>
               <a href="#contact" className="hover:text-white">Start a project</a>
             </div>
