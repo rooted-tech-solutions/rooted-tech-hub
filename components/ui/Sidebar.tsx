@@ -16,6 +16,15 @@ const nav = [
     ),
   },
   {
+    label: "Inbox",
+    href: "/dashboard/inbox",
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H6.911a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661Z" />
+      </svg>
+    ),
+  },
+  {
     label: "Clients",
     href: "/dashboard/clients",
     icon: (
@@ -62,7 +71,7 @@ const nav = [
   },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ unreadCount = 0 }: { unreadCount?: number }) {
   const pathname = usePathname();
 
   return (
@@ -108,7 +117,13 @@ export default function Sidebar() {
                 {item.icon}
               </span>
               {item.label}
-              {active && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-brand-light shadow-[0_0_8px_2px_rgba(216,234,224,0.6)]" />}
+              {item.href === "/dashboard/inbox" && unreadCount > 0 ? (
+                <span className="ml-auto min-w-[20px] px-1.5 py-0.5 rounded-full bg-brand-light text-brand-dark text-[10px] font-bold text-center leading-4">
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </span>
+              ) : (
+                active && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-brand-light shadow-[0_0_8px_2px_rgba(216,234,224,0.6)]" />
+              )}
             </Link>
           );
         })}
