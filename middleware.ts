@@ -5,8 +5,11 @@ export async function middleware(request: NextRequest) {
   return await updateSession(request);
 }
 
+// Only the gated surfaces. Every other route — the marketing pages and the
+// public /sign/[token] signing flow — must NOT run this, because updateSession
+// calls supabase.auth.getUser(), a network round-trip to Supabase. Matching
+// broadly would put that latency in front of every anonymous visitor and force
+// the marketing pages to render dynamically.
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
-  ],
+  matcher: ["/dashboard", "/dashboard/:path*", "/login"],
 };

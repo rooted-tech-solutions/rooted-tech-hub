@@ -31,8 +31,8 @@ export async function updateSession(request: NextRequest) {
 
   const url = request.nextUrl.clone();
   const isAuthRoute = url.pathname.startsWith("/login");
-  const isDashboardRoute =
-    url.pathname.startsWith("/dashboard") || url.pathname === "/";
+  // "/" is the public marketing page now, not a redirect to the dashboard.
+  const isDashboardRoute = url.pathname.startsWith("/dashboard");
 
   if (!user && isDashboardRoute) {
     url.pathname = "/login";
