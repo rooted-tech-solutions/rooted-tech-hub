@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { safeFrom } from "../backLink";
 import { logEvent } from "@/lib/events";
 import { applyInvoicePaid } from "./paid";
 import { addDaysISO, todayISO } from "@/lib/dates";
@@ -107,7 +108,7 @@ export async function createInvoiceRecord(formData: FormData) {
   const from = formData.get("from");
   revalidatePath("/dashboard/invoices");
   revalidatePath("/dashboard/clients");
-  redirect(typeof from === "string" && from ? from : "/dashboard/invoices");
+  redirect(safeFrom(from) ?? "/dashboard/invoices");
 }
 
 export async function updateInvoiceRecord(id: string, formData: FormData) {
@@ -132,7 +133,7 @@ export async function updateInvoiceRecord(id: string, formData: FormData) {
   revalidatePath("/dashboard/invoices");
   revalidatePath(`/dashboard/invoices/${id}`);
   revalidatePath("/dashboard/clients");
-  redirect(typeof from === "string" && from ? from : `/dashboard/invoices/${id}`);
+  redirect(safeFrom(from) ?? `/dashboard/invoices/${id}`);
 }
 
 export async function deleteInvoiceRecord(id: string, from?: string) {
@@ -149,13 +150,13 @@ export async function deleteInvoiceRecord(id: string, from?: string) {
     .eq("id", id)
     .eq("user_id", user.id)
     .single();
-  if (existing?.status === "paid") redirect(from ?? `/dashboard/invoices/${id}`);
+  if (existing?.status === "paid") redirect(safeFrom(from) ?? `/dashboard/invoices/${id}`);
 
   await supabase.from("invoices").delete().eq("id", id).eq("user_id", user.id);
 
   revalidatePath("/dashboard/invoices");
   revalidatePath("/dashboard/clients");
-  redirect(from ?? "/dashboard/invoices");
+  redirect(safeFrom(from) ?? "/dashboard/invoices");
 }
 
 /** Draft → sent. Stamps the issue date if it was never set, so "due" has something to count from. */

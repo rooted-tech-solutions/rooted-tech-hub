@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import ConfirmButton from "@/components/ui/ConfirmButton";
 import { StatusBadge } from "../../quotes/statusBadge";
+import { backLink } from "../../backLink";
 import { deleteContractRecord, sendPackage } from "../actions";
 import { signLinkFor } from "../links";
 import { contractClauses, type ContractSnapshot } from "../contractTerms";
@@ -20,8 +21,6 @@ function fmtDateTime(value: string | null) {
 }
 
 export default async function ContractDetailPage({ params, searchParams }: { params: { id: string }; searchParams: { from?: string } }) {
-  const backHref = searchParams.from ?? "/dashboard/contracts";
-  const backLabel = searchParams.from ? "← Back to Client" : "← Back to Contracts";
   const supabase = createClient();
   const {
     data: { user },
@@ -36,6 +35,8 @@ export default async function ContractDetailPage({ params, searchParams }: { par
     .single();
 
   if (!contract) notFound();
+
+  const { href: backHref, label: backLabel } = backLink(searchParams.from, contract.clients?.id, { href: "/dashboard/contracts", label: "Contracts" });
 
   const snapshot = contract.snapshot as ContractSnapshot;
   const clauses = contractClauses(snapshot);
@@ -65,7 +66,7 @@ export default async function ContractDetailPage({ params, searchParams }: { par
             <StatusBadge status={contract.status} />
           </div>
           {contract.quotes?.title && (
-            <Link href={`/dashboard/quotes/${contract.quotes.id}`} className="text-sm text-brand-mid hover:text-brand-dark transition-colors mt-1 inline-block">
+            <Link href={`/dashboard/quotes/${contract.quotes.id}?from=${encodeURIComponent(`/dashboard/contracts/${contract.id}`)}`} className="text-sm text-brand-mid hover:text-brand-dark transition-colors mt-1 inline-block">
               From quote: {contract.quotes.title}
             </Link>
           )}

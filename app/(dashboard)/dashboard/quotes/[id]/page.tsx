@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import ConfirmButton from "@/components/ui/ConfirmButton";
 import { StatusBadge } from "../statusBadge";
+import { backLink } from "../../backLink";
 import QuoteSummary from "../QuoteSummary";
 import { deleteQuoteRecord, updateQuoteStatus } from "../actions";
 import { generateContractFromQuote } from "../../contracts/actions";
@@ -100,7 +101,6 @@ export default async function QuoteDetailPage({
   params: { id: string };
   searchParams: { from?: string; view?: string };
 }) {
-  const backHref = searchParams.from ?? "/dashboard/quotes";
   // The client-facing document is the phase summary. The itemized hours × rate
   // table is the pricing worksheet — one toggle away, never the default.
   const itemized = searchParams.view === "itemized";
@@ -108,7 +108,6 @@ export default async function QuoteDetailPage({
   if (searchParams.from) toggleParams.set("from", searchParams.from);
   if (!itemized) toggleParams.set("view", "itemized");
   const toggleHref = `/dashboard/quotes/${params.id}${toggleParams.size ? `?${toggleParams}` : ""}`;
-  const backLabel = searchParams.from ? "← Back to Client" : "← Back to Quotes";
   const supabase = createClient();
   const {
     data: { user },
@@ -123,6 +122,9 @@ export default async function QuoteDetailPage({
     .single();
 
   if (!quote) notFound();
+
+  const { href: backHref, label: backLabel } = backLink(searchParams.from, quote.client_id, { href: "/dashboard/quotes", label: "Quotes" });
+  const here = `/dashboard/quotes/${quote.id}`;
 
   const buildItems: LineItem[] = quote.build_items ?? [];
   const maintItems: LineItem[] = quote.maintenance_items ?? [];
@@ -204,7 +206,7 @@ export default async function QuoteDetailPage({
           )}
           {contract ? (
             <Link
-              href={`/dashboard/contracts/${contract.id}`}
+              href={`/dashboard/contracts/${contract.id}?from=${encodeURIComponent(here)}`}
               className="whitespace-nowrap bg-brand-light text-brand-dark text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand-mid hover:text-white transition-colors"
             >
               View Contract

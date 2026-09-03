@@ -3,8 +3,10 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import QuoteForm from "../../QuoteForm";
 import { updateQuoteRecord } from "../../actions";
+import { safeFrom } from "../../../backLink";
 
-export default async function EditQuotePage({ params }: { params: { id: string } }) {
+export default async function EditQuotePage({ params, searchParams }: { params: { id: string }; searchParams: { from?: string } }) {
+  const from = safeFrom(searchParams.from);
   const supabase = createClient();
   const {
     data: { user },
@@ -28,7 +30,7 @@ export default async function EditQuotePage({ params }: { params: { id: string }
     <div className="p-4 md:p-8">
       <div className="mb-6">
         <Link
-          href={`/dashboard/quotes/${quote.id}`}
+          href={from ?? `/dashboard/quotes/${quote.id}`}
           className="text-sm font-medium text-gray-500 hover:text-brand-dark transition-colors"
         >
           ← Back to {quote.title}
@@ -41,7 +43,8 @@ export default async function EditQuotePage({ params }: { params: { id: string }
         initialValues={quote}
         clients={clients ?? []}
         submitLabel="Save Changes"
-        cancelHref={`/dashboard/quotes/${quote.id}`}
+        cancelHref={from ?? `/dashboard/quotes/${quote.id}`}
+        from={from}
       />
     </div>
   );

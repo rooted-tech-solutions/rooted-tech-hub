@@ -332,7 +332,7 @@ export default async function DashboardPage() {
               {overdueInvoices.length > 0 && (
                 <AttentionList tone="red" title="Overdue invoices">
                   {overdueInvoices.map((inv) => (
-                    <Link key={inv.id} href={`/dashboard/invoices/${inv.id}`} className="flex items-center justify-between gap-3 px-5 py-3 transition-colors hover:bg-red-50/50">
+                    <Link key={inv.id} href={`/dashboard/invoices/${inv.id}?from=%2Fdashboard`} className="flex items-center justify-between gap-3 px-5 py-3 transition-colors hover:bg-red-50/50">
                       <span className="min-w-0 truncate text-sm font-medium text-brand-dark">
                         {inv.clients?.company || inv.clients?.name || inv.title}
                       </span>
@@ -358,7 +358,7 @@ export default async function DashboardPage() {
               {unsignedContracts.length > 0 && (
                 <AttentionList tone="green" title="Awaiting signature">
                   {unsignedContracts.map((c) => (
-                    <Link key={c.id} href={`/dashboard/contracts/${c.id}`} className="flex items-center justify-between px-5 py-3 transition-colors hover:bg-brand-cream/60">
+                    <Link key={c.id} href={`/dashboard/contracts/${c.id}?from=%2Fdashboard`} className="flex items-center justify-between px-5 py-3 transition-colors hover:bg-brand-cream/60">
                       <span className="text-sm font-medium text-brand-dark">{c.clients?.company || c.clients?.name || "Client"}</span>
                       <span className="text-xs font-medium text-brand-mid">
                         sent {c.sent_at ? new Date(c.sent_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}

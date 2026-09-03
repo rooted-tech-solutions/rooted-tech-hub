@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import ConfirmButton from "@/components/ui/ConfirmButton";
 import { StatusBadge } from "../../quotes/statusBadge";
+import { backLink } from "../../backLink";
 import { deleteInvoiceRecord, markInvoicePaid, markInvoiceSent } from "../actions";
 import { effectiveInvoiceStatus } from "../status";
 import { sendInvoiceViaStripe } from "../stripeActions";
@@ -58,8 +59,6 @@ export default async function InvoiceDetailPage({
   params: { id: string };
   searchParams: { from?: string; payment?: string; stripe?: string; stripe_error?: string; via?: string; note?: string; transport?: string };
 }) {
-  const backHref = searchParams.from ?? "/dashboard/invoices";
-  const backLabel = searchParams.from ? "← Back to Client" : "← Back to Invoices";
   const paymentStatus = searchParams.payment;
   const supabase = createClient();
   const {
@@ -75,6 +74,8 @@ export default async function InvoiceDetailPage({
     .single();
 
   if (!invoice) notFound();
+
+  const { href: backHref, label: backLabel } = backLink(searchParams.from, invoice.client_id, { href: "/dashboard/invoices", label: "Invoices" });
 
 
   const status = effectiveInvoiceStatus(invoice);
@@ -279,7 +280,7 @@ export default async function InvoiceDetailPage({
                 value={
                   invoice.quotes?.title ? (
                     <Link
-                      href={`/dashboard/quotes/${invoice.quotes.id}`}
+                      href={`/dashboard/quotes/${invoice.quotes.id}?from=${encodeURIComponent(`/dashboard/invoices/${invoice.id}`)}`}
                       className="text-brand-mid hover:text-brand-dark transition-colors"
                     >
                       {invoice.quotes.title}

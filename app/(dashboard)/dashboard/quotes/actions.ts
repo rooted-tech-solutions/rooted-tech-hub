@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { safeFrom } from "../backLink";
 import { logEvent } from "@/lib/events";
 import { updateWithOptional } from "@/lib/supabase/updateWithOptional";
 
@@ -106,7 +107,7 @@ export async function createQuoteRecord(formData: FormData) {
   const from = formData.get("from");
   revalidatePath("/dashboard/quotes");
   revalidatePath("/dashboard/clients");
-  redirect(typeof from === "string" && from ? from : "/dashboard/quotes");
+  redirect(safeFrom(from) ?? "/dashboard/quotes");
 }
 
 export async function updateQuoteRecord(id: string, formData: FormData) {
@@ -131,7 +132,7 @@ export async function updateQuoteRecord(id: string, formData: FormData) {
   revalidatePath("/dashboard/quotes");
   revalidatePath(`/dashboard/quotes/${id}`);
   revalidatePath("/dashboard/clients");
-  redirect(typeof from === "string" && from ? from : `/dashboard/quotes/${id}`);
+  redirect(safeFrom(from) ?? `/dashboard/quotes/${id}`);
 }
 
 export async function deleteQuoteRecord(id: string, from?: string) {
@@ -148,14 +149,14 @@ export async function deleteQuoteRecord(id: string, from?: string) {
     .select("id", { count: "exact", head: true })
     .eq("quote_id", id)
     .eq("user_id", user.id);
-  if ((count ?? 0) > 0) redirect(from ?? `/dashboard/quotes/${id}`);
+  if ((count ?? 0) > 0) redirect(safeFrom(from) ?? `/dashboard/quotes/${id}`);
 
   await supabase.from("quotes").delete().eq("id", id).eq("user_id", user.id);
 
   revalidatePath("/dashboard/quotes");
   revalidatePath("/dashboard/clients");
   revalidatePath("/dashboard");
-  redirect(from ?? "/dashboard/quotes");
+  redirect(safeFrom(from) ?? "/dashboard/quotes");
 }
 
 export async function updateQuoteStatus(id: string, status: string, clientId?: string) {

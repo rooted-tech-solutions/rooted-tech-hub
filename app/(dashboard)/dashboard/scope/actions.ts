@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { safeFrom } from "../backLink";
 import { logEvent } from "@/lib/events";
 import { updateWithOptional } from "@/lib/supabase/updateWithOptional";
 
@@ -88,7 +89,7 @@ export async function createSowRecord(formData: FormData) {
   const from = formData.get("from");
   revalidatePath("/dashboard/scope");
   revalidatePath("/dashboard/clients");
-  redirect(typeof from === "string" && from ? from : "/dashboard/scope");
+  redirect(safeFrom(from) ?? "/dashboard/scope");
 }
 
 export async function updateSowRecord(id: string, formData: FormData) {
@@ -111,7 +112,7 @@ export async function updateSowRecord(id: string, formData: FormData) {
   revalidatePath("/dashboard/scope");
   revalidatePath(`/dashboard/scope/${id}`);
   revalidatePath("/dashboard/clients");
-  redirect(typeof from === "string" && from ? from : `/dashboard/scope/${id}`);
+  redirect(safeFrom(from) ?? `/dashboard/scope/${id}`);
 }
 
 export async function deleteSowRecord(id: string, from?: string) {
@@ -126,13 +127,13 @@ export async function deleteSowRecord(id: string, from?: string) {
     .eq("id", id)
     .eq("user_id", user.id)
     .single();
-  if (existing?.status === "approved") redirect(from ?? `/dashboard/scope/${id}`);
+  if (existing?.status === "approved") redirect(safeFrom(from) ?? `/dashboard/scope/${id}`);
 
   await supabase.from("scope_of_work").delete().eq("id", id).eq("user_id", user.id);
 
   revalidatePath("/dashboard/scope");
   revalidatePath("/dashboard/clients");
-  redirect(from ?? "/dashboard/scope");
+  redirect(safeFrom(from) ?? "/dashboard/scope");
 }
 
 export async function updateSowStatus(id: string, status: string, clientId?: string) {

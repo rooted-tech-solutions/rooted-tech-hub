@@ -4,8 +4,10 @@ import { createClient } from "@/lib/supabase/server";
 import InvoiceForm, { type ContractTerms } from "../../InvoiceForm";
 import type { ContractSnapshot } from "../../../contracts/contractTerms";
 import { updateInvoiceRecord } from "../../actions";
+import { safeFrom } from "../../../backLink";
 
-export default async function EditInvoicePage({ params }: { params: { id: string } }) {
+export default async function EditInvoicePage({ params, searchParams }: { params: { id: string }; searchParams: { from?: string } }) {
+  const from = safeFrom(searchParams.from);
   const supabase = createClient();
   const {
     data: { user },
@@ -37,7 +39,7 @@ export default async function EditInvoicePage({ params }: { params: { id: string
     <div className="p-4 md:p-8">
       <div className="mb-6">
         <Link
-          href={`/dashboard/invoices/${invoice.id}`}
+          href={from ?? `/dashboard/invoices/${invoice.id}`}
           className="text-sm font-medium text-gray-500 hover:text-brand-dark transition-colors"
         >
           ← Back to {invoice.invoice_number}
@@ -52,7 +54,8 @@ export default async function EditInvoicePage({ params }: { params: { id: string
         quotes={quotes ?? []}
         contractTerms={contractTerms}
         submitLabel="Save Changes"
-        cancelHref={`/dashboard/invoices/${invoice.id}`}
+        cancelHref={from ?? `/dashboard/invoices/${invoice.id}`}
+        from={from}
       />
     </div>
   );

@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import ConfirmButton from "@/components/ui/ConfirmButton";
 import { StatusBadge } from "../../quotes/statusBadge";
+import { backLink } from "../../backLink";
 import { deleteSowRecord, updateSowStatus } from "../actions";
 import PrintButton from "@/components/ui/PrintButton";
 import type { SowItem } from "../actions";
@@ -42,9 +43,6 @@ export default async function SowDetailPage({
   params: { id: string };
   searchParams: { from?: string };
 }) {
-  const backHref = searchParams.from ?? "/dashboard/scope";
-  const backLabel = searchParams.from ? "← Back to Client" : "← Back to Scope Docs";
-
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
@@ -63,6 +61,7 @@ export default async function SowDetailPage({
   const assumptions = (sow.assumptions ?? []) as SowItem[];
   const client = sow.clients as { id: string; name: string; company: string | null; email: string | null } | null;
   const quote = sow.quotes as { id: string; title: string } | null;
+  const { href: backHref, label: backLabel } = backLink(searchParams.from, client?.id, { href: "/dashboard/scope", label: "Scope documents" });
 
   async function handleDelete() {
     "use server";

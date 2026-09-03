@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { safeFrom } from "../backLink";
 import { logEvent } from "@/lib/events";
 import { buildContractSnapshot } from "./contractTerms";
 import { updateWithOptional } from "@/lib/supabase/updateWithOptional";
@@ -174,11 +175,11 @@ export async function deleteContractRecord(id: string, from?: string) {
     .eq("id", id)
     .eq("user_id", user.id)
     .single();
-  if (existing?.status === "signed") redirect(from ?? `/dashboard/contracts/${id}`);
+  if (existing?.status === "signed") redirect(safeFrom(from) ?? `/dashboard/contracts/${id}`);
 
   await supabase.from("contracts").delete().eq("id", id).eq("user_id", user.id);
 
   revalidatePath("/dashboard/contracts");
   revalidatePath("/dashboard/clients");
-  redirect(from ?? "/dashboard/contracts");
+  redirect(safeFrom(from) ?? "/dashboard/contracts");
 }
