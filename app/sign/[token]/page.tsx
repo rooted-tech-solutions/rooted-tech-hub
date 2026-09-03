@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import PrintButton from "@/components/ui/PrintButton";
 import { annualValue, fmtMoney, quoteNumber } from "@/app/(dashboard)/dashboard/quotes/lineItems";
+import QuoteSummary from "@/app/(dashboard)/dashboard/quotes/QuoteSummary";
 import { contractClauses, type ContractSnapshot } from "@/app/(dashboard)/dashboard/contracts/contractTerms";
 import type { LineItem } from "@/app/(dashboard)/dashboard/quotes/actions";
 import type { SowItem } from "@/app/(dashboard)/dashboard/scope/actions";
@@ -28,15 +29,6 @@ function InfoField({ label, value }: { label: string; value: string | null | und
   );
 }
 
-function DocDivider({ num, title }: { num: number; title: string }) {
-  return (
-    <div className="flex items-center gap-3 py-4">
-      <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-brand-dark text-white text-xs font-bold flex-shrink-0">{num}</span>
-      <span className="text-sm font-bold text-brand-dark uppercase tracking-wide">{title}</span>
-      <div className="flex-1 h-px bg-brand-light" />
-    </div>
-  );
-}
 
 export default async function SignContractPage({ params }: { params: { token: string } }) {
   const supabase = createClient();
@@ -124,83 +116,15 @@ export default async function SignContractPage({ params }: { params: { token: st
                   </div>
                 </div>
 
-                {/* Build line items */}
-                {buildItems.length > 0 && (
-                  <div className="mb-7">
-                    <DocDivider num={1} title="Build Phase" />
-                    <div className="border border-brand-light rounded-lg overflow-hidden">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="bg-brand-cream text-left text-xs uppercase tracking-wide text-gray-500">
-                            <th className="px-3 py-2 font-medium w-14">#</th>
-                            <th className="px-3 py-2 font-medium">Description</th>
-                            <th className="px-3 py-2 font-medium w-20 text-right">Hours</th>
-                            <th className="px-3 py-2 font-medium w-24 text-right">Rate</th>
-                            <th className="px-3 py-2 font-medium w-28 text-right">Total</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {buildItems.map((item, i) => (
-                            <tr key={i} className="border-t border-brand-light">
-                              <td className="px-3 py-2 text-gray-400 font-mono text-xs">{item.num}</td>
-                              <td className="px-3 py-2 text-brand-dark">{item.desc}</td>
-                              <td className="px-3 py-2 text-right text-gray-600">{item.hours || 0}</td>
-                              <td className="px-3 py-2 text-right text-gray-600">{fmtMoney(item.rate)}</td>
-                              <td className="px-3 py-2 text-right font-medium text-brand-dark">{fmtMoney((item.hours || 0) * (item.rate || 0))}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                        <tfoot>
-                          <tr className="border-t border-brand-light bg-brand-light/40">
-                            <td colSpan={4} className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-brand-dark">Total Build Cost</td>
-                            <td className="px-3 py-2 text-right font-semibold text-brand-dark">{fmtMoney(quote.build_total)}</td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                {/* Maintenance line items */}
-                {maintItems.length > 0 && (
-                  <div className="mb-7">
-                    <DocDivider num={2} title="Annual Maintenance" />
-                    <div className="border border-brand-light rounded-lg overflow-hidden">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="bg-brand-cream text-left text-xs uppercase tracking-wide text-gray-500">
-                            <th className="px-3 py-2 font-medium w-14">#</th>
-                            <th className="px-3 py-2 font-medium">Description</th>
-                            <th className="px-3 py-2 font-medium w-20 text-right">Hours</th>
-                            <th className="px-3 py-2 font-medium w-24 text-right">Rate</th>
-                            <th className="px-3 py-2 font-medium w-28 text-right">Total</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {maintItems.map((item, i) => (
-                            <tr key={i} className="border-t border-brand-light">
-                              <td className="px-3 py-2 text-gray-400 font-mono text-xs">{item.num}</td>
-                              <td className="px-3 py-2 text-brand-dark">{item.desc}</td>
-                              <td className="px-3 py-2 text-right text-gray-600">{item.hours || 0}</td>
-                              <td className="px-3 py-2 text-right text-gray-600">{fmtMoney(item.rate)}</td>
-                              <td className="px-3 py-2 text-right font-medium text-brand-dark">{fmtMoney((item.hours || 0) * (item.rate || 0))}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                        <tfoot>
-                          <tr className="border-t border-brand-light bg-brand-light/40">
-                            <td colSpan={4} className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-brand-dark">Monthly Rate</td>
-                            <td className="px-3 py-2 text-right font-semibold text-brand-dark">{fmtMoney(quote.monthly_retainer)}</td>
-                          </tr>
-                          <tr className="border-t border-brand-light/60 bg-brand-cream/60">
-                            <td colSpan={4} className="px-3 py-1.5 text-right text-[10px] text-gray-500 italic">Annual total (×12)</td>
-                            <td className="px-3 py-1.5 text-right text-[10px] font-medium text-brand-mid">{fmtMoney(annual)}/yr</td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-                  </div>
-                )}
+                {/* What is being quoted — the phases and the care plan, never the pricing worksheet. */}
+                <div className="mb-7">
+                  <QuoteSummary
+                    buildItems={buildItems}
+                    maintItems={maintItems}
+                    buildTotal={quote.build_total}
+                    monthlyRetainer={quote.monthly_retainer}
+                  />
+                </div>
 
                 {/* Totals */}
                 <div className="space-y-3 max-w-2xl ml-auto">

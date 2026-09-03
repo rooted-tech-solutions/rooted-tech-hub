@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { buildContractSnapshot } from "./contractTerms";
+import { updateWithOptional } from "@/lib/supabase/updateWithOptional";
 
 export async function generateContractFromQuote(quoteId: string) {
   const supabase = createClient();
@@ -87,12 +88,89 @@ export async function sendContract(id: string) {
   revalidatePath("/dashboard/clients");
 }
 
+/**
+ * The one "send" in the pipeline. Quote, scope of work and agreement go to
+ * the client together as a single signing link, so they leave together:
+ * the contract becomes `sent` (which is what activates the link — the
+ * signing RPC refuses anything else), the quote it was built from becomes
+ * `sent`, and any draft scope for this client that is linked to that quote
+ * (or to no quote at all) becomes `sent`. Already-advanced documents are
+ * left alone, so sending twice is harmless.
+ */
+export async function sendPackage(contractId: string) {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: contract } = await supabase
+    .from("contracts")
+    .select("id, quote_id, client_id, status")
+    .eq("id", contractId)
+    .eq("user_id", user.id)
+    .single();
+  if (!contract) return { error: "Contract not found" };
+
+  const now = new Date().toISOString();
+
+  if (contract.status === "draft") {
+    await supabase
+      .from("contracts")
+      .update({ status: "sent", sent_at: now })
+      .eq("id", contract.id)
+      .eq("user_id", user.id);
+  }
+
+  if (contract.quote_id) {
+    await updateWithOptional(
+      supabase,
+      "quotes",
+      { id: contract.quote_id, user_id: user.id, status: "draft" },
+      { status: "sent" },
+      { sent_at: now },
+    );
+  }
+
+  if (contract.client_id) {
+    const { data: sows } = await supabase
+      .from("scope_of_work")
+      .select("id, status, quote_id")
+      .eq("user_id", user.id)
+      .eq("client_id", contract.client_id);
+    for (const sow of sows ?? []) {
+      const belongs = sow.quote_id === contract.quote_id || sow.quote_id === null;
+      if (sow.status === "draft" && belongs) {
+        await updateWithOptional(supabase, "scope_of_work", { id: sow.id, user_id: user.id }, { status: "sent" }, { sent_at: now });
+      }
+    }
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/contracts");
+  revalidatePath(`/dashboard/contracts/${contract.id}`);
+  revalidatePath("/dashboard/quotes");
+  revalidatePath("/dashboard/scope");
+  revalidatePath("/dashboard/clients");
+  if (contract.client_id) revalidatePath(`/dashboard/clients/${contract.client_id}`);
+  return { ok: true };
+}
+
 export async function deleteContractRecord(id: string, from?: string) {
   const supabase = createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+
+  // A signed agreement is a record of what the client agreed to. It stays.
+  const { data: existing } = await supabase
+    .from("contracts")
+    .select("status")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .single();
+  if (existing?.status === "signed") redirect(from ?? `/dashboard/contracts/${id}`);
 
   await supabase.from("contracts").delete().eq("id", id).eq("user_id", user.id);
 

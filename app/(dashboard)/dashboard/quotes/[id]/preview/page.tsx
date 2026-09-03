@@ -1,11 +1,12 @@
 import Image from "next/image";
 import Link from "next/link";
-import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { annualValue, fmtMoney, quoteNumber } from "../../lineItems";
 import { contractClauses, type ContractSnapshot } from "../../../contracts/contractTerms";
 import PrintButton from "@/components/ui/PrintButton";
+import QuoteSummary from "../../QuoteSummary";
+import { signLinkFor } from "../../../contracts/links";
 import CopyButton from "@/components/ui/CopyButton";
 import type { LineItem } from "../../actions";
 import type { SowItem } from "../../../scope/actions";
@@ -99,7 +100,8 @@ function LineItemSection({
   );
 }
 
-export default async function QuotePreviewPage({ params }: { params: { id: string } }) {
+export default async function QuotePreviewPage({ params, searchParams }: { params: { id: string }; searchParams: { view?: string } }) {
+  const itemized = searchParams.view === "itemized";
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
@@ -141,10 +143,7 @@ export default async function QuotePreviewPage({ params }: { params: { id: strin
   const contractTotal = (quote.build_total ?? 0) + annual;
   const deposit = contractTotal / 2;
 
-  const headersList = headers();
-  const host = headersList.get("host") ?? "localhost:3003";
-  const proto = headersList.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
-  const signLink = contract ? `${proto}://${host}/sign/${contract.sign_token}` : null;
+  const signLink = contract ? signLinkFor(contract.sign_token) : null;
   const snapshot = contract?.snapshot as ContractSnapshot | undefined;
   const clauses = snapshot ? contractClauses(snapshot) : [];
 
@@ -167,6 +166,12 @@ export default async function QuotePreviewPage({ params }: { params: { id: strin
               <CopyButton text={signLink} label="Copy" />
             </div>
           )}
+          <Link
+            href={`/dashboard/quotes/${quote.id}/preview${itemized ? "" : "?view=itemized"}`}
+            className="text-sm font-medium text-gray-500 hover:text-brand-dark transition-colors"
+          >
+            {itemized ? "Show summary" : "Show line items"}
+          </Link>
           <PrintButton label="Save as PDF" />
         </div>
       </div>
@@ -221,10 +226,14 @@ export default async function QuotePreviewPage({ params }: { params: { id: strin
               </div>
             </div>
 
-            <div className="space-y-7">
-              <LineItemSection num={1} title="Build Phase" items={buildItems} subtotalLabel="Total Build Cost" subtotal={quote.build_total ?? 0} />
-              <LineItemSection num={2} title="Annual Maintenance" items={maintItems} subtotalLabel="Monthly Rate" subtotal={quote.monthly_retainer ?? 0} annualTotal={annual} />
-            </div>
+            {itemized ? (
+              <div className="space-y-7">
+                <LineItemSection num={1} title="Build Phase" items={buildItems} subtotalLabel="Total Build Cost" subtotal={quote.build_total ?? 0} />
+                <LineItemSection num={2} title="Annual Maintenance" items={maintItems} subtotalLabel="Monthly Rate" subtotal={quote.monthly_retainer ?? 0} annualTotal={annual} />
+              </div>
+            ) : (
+              <QuoteSummary buildItems={buildItems} maintItems={maintItems} buildTotal={quote.build_total} monthlyRetainer={quote.monthly_retainer} />
+            )}
 
             {/* Grand totals */}
             <div className="mt-7 space-y-3 max-w-2xl ml-auto">

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
+import { addDaysISO, todayISO } from "@/lib/dates";
 
 type Client = { id: string; name: string; company: string | null };
 type Quote = {
@@ -47,36 +48,47 @@ const INVOICE_TYPES = [
   { value: "custom", label: "Custom Amount" },
 ];
 
-function computeAmount(type: string, quote: Quote | null): string {
-  if (!quote) return "";
-  const annual = (quote.monthly_retainer ?? 0) * 12;
-  const contractTotal = (quote.build_total ?? 0) + annual;
+/**
+ * Frozen terms from a signed agreement, keyed by quote id. When present they
+ * win over the live quote: editing a quote after signing must not change what
+ * gets invoiced. Built by the new/edit pages from contracts.snapshot.
+ */
+export type ContractTerms = { build_total: number; annual_value: number };
+
+function termsFor(quote: Quote | null, contractTerms: Record<string, ContractTerms>) {
+  if (!quote) return null;
+  const frozen = contractTerms[quote.id];
+  if (frozen) return { build: frozen.build_total, annual: frozen.annual_value, source: "agreement" as const };
+  return { build: quote.build_total ?? 0, annual: (quote.monthly_retainer ?? 0) * 12, source: "quote" as const };
+}
+
+function computeAmount(type: string, quote: Quote | null, contractTerms: Record<string, ContractTerms>): string {
+  const terms = termsFor(quote, contractTerms);
+  if (!terms) return "";
+  const contractTotal = terms.build + terms.annual;
   switch (type) {
     case "deposit":
-      return String((contractTotal / 2).toFixed(2));
     case "final_payment":
       return String((contractTotal / 2).toFixed(2));
     case "annual_renewal":
-      return String(annual.toFixed(2));
+      return String(terms.annual.toFixed(2));
     default:
       return "";
   }
 }
 
-function typeLabel(type: string, quote: Quote | null): string {
-  if (!quote) return "";
-  const annual = (quote.monthly_retainer ?? 0) * 12;
-  const contractTotal = (quote.build_total ?? 0) + annual;
-  const half = contractTotal / 2;
-  const fmt = (n: number) =>
-    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
+function typeLabel(type: string, quote: Quote | null, contractTerms: Record<string, ContractTerms>): string {
+  const terms = termsFor(quote, contractTerms);
+  if (!terms) return "";
+  const contractTotal = terms.build + terms.annual;
+  const fmt = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
+  const from = terms.source === "agreement" ? "Per the signed agreement" : "From the quote — no signed agreement yet";
   switch (type) {
     case "deposit":
-      return `50% of ${fmt(contractTotal)} total = ${fmt(half)}`;
     case "final_payment":
-      return `50% of ${fmt(contractTotal)} total = ${fmt(half)}`;
+      return `${from}: 50% of ${fmt(contractTotal)} = ${fmt(contractTotal / 2)}`;
     case "annual_renewal":
-      return `${fmt(quote.monthly_retainer ?? 0)}/mo × 12 = ${fmt(annual)}`;
+      return `${from}: ${fmt(terms.annual / 12)}/mo × 12 = ${fmt(terms.annual)}`;
     default:
       return "";
   }
@@ -107,6 +119,7 @@ export default function InvoiceForm({
   submitLabel,
   cancelHref,
   from,
+  contractTerms = {},
 }: {
   action: (prevState: FormState, formData: FormData) => Promise<FormState>;
   initialValues?: InvoiceFormValues;
@@ -115,6 +128,7 @@ export default function InvoiceForm({
   submitLabel: string;
   cancelHref: string;
   from?: string;
+  contractTerms?: Record<string, ContractTerms>;
 }) {
   const [state, formAction] = useFormState<FormState, FormData>(action, null);
   const [values] = useState<InvoiceFormValues>(initialValues ?? {});
@@ -132,24 +146,20 @@ export default function InvoiceForm({
 
   function handleIssuedDateChange(val: string) {
     setIssuedDate(val);
-    if (val && !dueDate) {
-      const d = new Date(val + "T00:00:00");
-      d.setDate(d.getDate() + 30);
-      setDueDate(d.toISOString().slice(0, 10));
-    }
+    if (val && !dueDate) setDueDate(addDaysISO(val, 30));
   }
 
   function handleStatusChange(val: string) {
     setStatus(val);
     if (val === "paid" && !paidDate) {
-      setPaidDate(new Date().toISOString().slice(0, 10));
+      setPaidDate(todayISO());
     }
   }
 
   const selectedQuote = quotes.find((q) => q.id === quoteId) ?? null;
   const isAutoAmount = invoiceType !== "custom";
-  const autoAmount = isAutoAmount ? computeAmount(invoiceType, selectedQuote) : "";
-  const hint = isAutoAmount ? typeLabel(invoiceType, selectedQuote) : "";
+  const autoAmount = isAutoAmount ? computeAmount(invoiceType, selectedQuote, contractTerms) : "";
+  const hint = isAutoAmount ? typeLabel(invoiceType, selectedQuote, contractTerms) : "";
 
   function handleQuoteChange(newQuoteId: string) {
     setQuoteId(newQuoteId);

@@ -2,7 +2,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { deleteInvoiceRecord, markInvoicePaid } from "../actions";
+import ConfirmButton from "@/components/ui/ConfirmButton";
+import { StatusBadge } from "../../quotes/statusBadge";
+import { deleteInvoiceRecord, markInvoicePaid, markInvoiceSent } from "../actions";
+import { effectiveInvoiceStatus } from "../status";
 // import { createStripeCheckout } from "../stripeActions";
 import { fmtMoney } from "../../quotes/lineItems";
 
@@ -61,14 +64,21 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
   if (!invoice) notFound();
 
 
+  const status = effectiveInvoiceStatus(invoice);
+
   async function handleDelete() {
     "use server";
-    await deleteInvoiceRecord(invoice!.id);
+    await deleteInvoiceRecord(invoice!.id, searchParams.from);
   }
 
   async function handleMarkPaid() {
     "use server";
     await markInvoicePaid(invoice!.id);
+  }
+
+  async function handleMarkSent() {
+    "use server";
+    await markInvoiceSent(invoice!.id);
   }
 
 
@@ -96,12 +106,7 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
           </Link>
           <div className="flex items-center gap-3 mt-2">
             <h1 className="text-2xl font-semibold text-brand-dark">{invoice.invoice_number}</h1>
-            {invoice.status === "paid" && (
-              <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 text-xs font-semibold px-2.5 py-1 rounded-lg">
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
-                Paid
-              </span>
-            )}
+            <StatusBadge status={status} />
           </div>
           <p className="text-sm text-gray-500 mt-1">{invoice.title}</p>
           {invoice.clients?.name && (
@@ -114,6 +119,16 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
           )}
         </div>
         <div className="flex items-center gap-3">
+          {invoice.status === "draft" && (
+            <form action={handleMarkSent}>
+              <button
+                type="submit"
+                className="bg-brand-mid text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand-dark transition-colors"
+              >
+                Mark sent
+              </button>
+            </form>
+          )}
           {invoice.status !== "paid" && (
             <form action={handleMarkPaid}>
               <button
@@ -131,12 +146,7 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
             Edit
           </Link>
           <form action={handleDelete}>
-            <button
-              type="submit"
-              className="text-sm font-medium text-red-600 hover:text-red-800 transition-colors px-2 py-2"
-            >
-              Delete
-            </button>
+            <ConfirmButton label="Delete" disabled={invoice.status === "paid"} disabledReason="Paid invoices are part of the books." />
           </form>
         </div>
       </div>
@@ -180,7 +190,7 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
             <div className="bg-brand-cream border border-brand-light rounded-lg px-4 py-3.5">
               <p className="text-[9.5px] font-bold uppercase tracking-[0.1em] text-brand-dark mb-2.5">Invoice Details</p>
               <InfoField label="Title" value={invoice.title} />
-              <InfoField label="Status" value={invoice.status === "paid" ? "Paid" : "Unpaid"} />
+              <InfoField label="Status" value={status.charAt(0).toUpperCase() + status.slice(1)} />
               <InfoField label="Paid Date" value={fmtDate(invoice.paid_date)} />
               <InfoField
                 label="Linked Quote"

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { updateWithOptional } from "@/lib/supabase/updateWithOptional";
 
 export type SowItem = { item: string };
 
@@ -115,6 +116,15 @@ export async function deleteSowRecord(id: string, from?: string) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  // An approved scope is what the client agreed to. It stays.
+  const { data: existing } = await supabase
+    .from("scope_of_work")
+    .select("status")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .single();
+  if (existing?.status === "approved") redirect(from ?? `/dashboard/scope/${id}`);
+
   await supabase.from("scope_of_work").delete().eq("id", id).eq("user_id", user.id);
 
   revalidatePath("/dashboard/scope");
@@ -127,8 +137,16 @@ export async function updateSowStatus(id: string, status: string, clientId?: str
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  await supabase.from("scope_of_work").update({ status }).eq("id", id).eq("user_id", user.id);
+  if (!["draft", "sent", "approved"].includes(status)) return;
 
+  // Stamp the handoffs — see migration 009. Tolerates the column not existing yet.
+  const now = new Date().toISOString();
+  const stamp: Record<string, unknown> = {};
+  if (status === "sent") stamp.sent_at = now;
+  if (status === "approved") stamp.approved_at = now;
+  await updateWithOptional(supabase, "scope_of_work", { id, user_id: user.id }, { status }, stamp);
+
+  revalidatePath("/dashboard");
   revalidatePath("/dashboard/scope");
   revalidatePath(`/dashboard/scope/${id}`);
   if (clientId) revalidatePath(`/dashboard/clients/${clientId}`);

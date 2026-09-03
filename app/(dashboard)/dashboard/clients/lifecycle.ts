@@ -1,3 +1,5 @@
+import { startOfToday } from "@/lib/dates";
+
 export type LifecycleStage =
   | "prospect"
   | "quoted"
@@ -13,6 +15,14 @@ export type LifecycleInfo = {
   label: string;
   description: string;
   color: string; // Tailwind classes for badge
+  /** "problem" marks a stage the client is stuck at — a declined quote or agreement. */
+  tone?: "ok" | "problem";
+  /**
+   * Present only when a manual stage is in force: what the documents alone
+   * would say. The client page shows it when it disagrees, so an override
+   * never quietly hides reality (a declined quote under "Quoted", say).
+   */
+  auto?: LifecycleInfo;
 };
 
 type Invoice = { invoice_type: string | null; status: string };
@@ -29,38 +39,60 @@ const MANUAL_STAGE_INFO: Record<Exclude<LifecycleStage, "overdue_renewal">, Omit
   renewal_due:    { label: "Up for Renewal",   description: "Renewal coming up",                            color: "bg-amber-100 text-amber-700 ring-1 ring-amber-200" },
 };
 
+const PROBLEM = "bg-red-50 text-red-700 ring-1 ring-red-200";
+
+function fmtRenewal(renewalDate: string) {
+  return new Date(renewalDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
 export function computeLifecycle(opts: {
   /** True only when at least one quote has status "sent" or "accepted" */
   hasQuote: boolean;
+  /** Status of the newest quote — a declined one changes the story. */
+  latestQuoteStatus?: string | null;
   contract: Contract;
   invoices: Invoice[];
   renewalDate: string | null;
   /** Optional manual override stored on the client record */
   manualStage?: string | null;
 }): LifecycleInfo {
-  const { hasQuote, contract, invoices, renewalDate, manualStage } = opts;
+  const { hasQuote, latestQuoteStatus, contract, invoices, renewalDate, manualStage } = opts;
 
-  // Manual override — use stored stage directly
+  const auto = fromDocuments({ hasQuote, latestQuoteStatus, contract, invoices, renewalDate });
+
+  // Manual override — use stored stage directly, but carry the automatic
+  // reading along so the UI can flag a disagreement.
   if (manualStage && manualStage in MANUAL_STAGE_INFO) {
     const stage = manualStage as Exclude<LifecycleStage, "overdue_renewal">;
     const info = MANUAL_STAGE_INFO[stage];
-    // For active/renewal, enrich description with renewal date if available
-    if ((stage === "active" || stage === "renewal_due") && renewalDate) {
-      const dateStr = new Date(renewalDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-      return { stage, ...info, description: `Renews ${dateStr}` };
-    }
-    return { stage, ...info };
+    const description =
+      (stage === "active" || stage === "renewal_due") && renewalDate ? `Renews ${fmtRenewal(renewalDate)}` : info.description;
+    return { stage, ...info, description, auto };
   }
 
-  const paid = (type: string) =>
-    invoices.some((inv) => inv.invoice_type === type && inv.status === "paid");
+  return auto;
+}
+
+function fromDocuments({
+  hasQuote,
+  latestQuoteStatus,
+  contract,
+  invoices,
+  renewalDate,
+}: {
+  hasQuote: boolean;
+  latestQuoteStatus?: string | null;
+  contract: Contract;
+  invoices: Invoice[];
+  renewalDate: string | null;
+}): LifecycleInfo {
+  const paid = (type: string) => invoices.some((inv) => inv.invoice_type === type && inv.status === "paid");
 
   const depositPaid = paid("deposit");
   const finalPaid = paid("final_payment");
   const contractSigned = contract?.status === "signed";
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = startOfToday();
 
   let daysUntilRenewal: number | null = null;
   if (renewalDate) {
@@ -89,7 +121,7 @@ export function computeLifecycle(opts: {
     return {
       stage: "active",
       label: "Active",
-      description: renewalDate ? `Renews ${new Date(renewalDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : "Active client",
+      description: renewalDate ? `Renews ${fmtRenewal(renewalDate)}` : "Active client",
       color: "bg-brand-light text-brand-dark ring-1 ring-brand-mid/20",
     };
   }
@@ -112,6 +144,27 @@ export function computeLifecycle(opts: {
     };
   }
 
+  // Stuck states. Nothing was paid or signed, and the newest document was
+  // turned down — the stepper must say so rather than "Quoted".
+  if (contract?.status === "declined") {
+    return {
+      stage: "quoted",
+      label: "Contract Declined",
+      description: "The agreement was declined — revise the quote and send a fresh one",
+      color: PROBLEM,
+      tone: "problem",
+    };
+  }
+  if (latestQuoteStatus === "declined") {
+    return {
+      stage: "quoted",
+      label: "Quote Declined",
+      description: "Revise the quote and send it again, or leave the client as a prospect",
+      color: PROBLEM,
+      tone: "problem",
+    };
+  }
+
   if (hasQuote) {
     return {
       stage: "quoted",
@@ -124,7 +177,7 @@ export function computeLifecycle(opts: {
   return {
     stage: "prospect",
     label: "Prospect",
-    description: "No quote yet",
+    description: latestQuoteStatus === "draft" ? "Quote drafted — not sent yet" : "No quote yet",
     color: "bg-gray-100 text-gray-500 ring-1 ring-gray-200",
   };
 }

@@ -8,10 +8,15 @@ export default async function NewSowPage({ searchParams }: { searchParams: { cli
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const [{ data: clients }, { data: quotes }, sowNumber] = await Promise.all([
+  const [{ data: clients }, { data: quotes }, sowNumber, seedClient] = await Promise.all([
     supabase.from("clients").select("id, name, company").eq("user_id", user.id).order("name"),
     supabase.from("quotes").select("id, title, client_id").eq("user_id", user.id).order("title"),
     getNextSowNumber(),
+    // Step 1 → step 2: a scope started from a client page begins with that
+    // client's meeting notes as its discovery notes.
+    searchParams.client_id
+      ? supabase.from("clients").select("notes").eq("id", searchParams.client_id).eq("user_id", user.id).maybeSingle()
+      : Promise.resolve({ data: null }),
   ]);
 
   const backHref = searchParams.from ?? "/dashboard/scope";
@@ -36,6 +41,7 @@ export default async function NewSowPage({ searchParams }: { searchParams: { cli
         initialValues={{
           sow_number: sowNumber,
           client_id: searchParams.client_id ?? null,
+          notes: (seedClient.data as { notes?: string | null } | null)?.notes ?? null,
           deliverables: [],
           exclusions: [],
           assumptions: [],

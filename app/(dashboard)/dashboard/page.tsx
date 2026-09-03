@@ -1,20 +1,125 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { fmtMoney } from "./quotes/lineItems";
+import { computeLifecycle } from "./clients/lifecycle";
+import { computeNextStep, daysUntil, type NextStep } from "./clients/nextStep";
+import { daysPastDue, effectiveInvoiceStatus } from "./invoices/status";
 
-function daysUntil(dateStr: string): number {
-  const target = new Date(dateStr + "T00:00:00");
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return Math.round((target.getTime() - today.getTime()) / 86400000);
+/*
+ * The dashboard answers one question: what should I do today?
+ *
+ * "Up next" runs the same next-step engine as each client page across every
+ * client and groups the results by whose move it is. "Needs attention" is the
+ * calendar talking — overdue invoices and renewals — regardless of pipeline
+ * position. Quick actions start from a client or the inbox, never from a
+ * blank document.
+ */
+
+type ClientRow = {
+  id: string;
+  name: string;
+  company: string | null;
+  email: string | null;
+  renewal_date: string | null;
+  notes: string | null;
+  lifecycle_stage: string | null;
+};
+type QuoteRow = { id: string; client_id: string | null; status: string; amount: number | null };
+type InvoiceRow = {
+  id: string;
+  client_id: string | null;
+  status: string;
+  amount: number | null;
+  due_date: string | null;
+  title: string;
+  invoice_type: string | null;
+  clients: { name: string | null; company: string | null } | null;
+};
+type ContractRow = {
+  id: string;
+  client_id: string | null;
+  status: string;
+  quote_id: string | null;
+  sent_at: string | null;
+  signed_at: string | null;
+  sign_token: string;
+  clients: { id: string; name: string | null; company: string | null } | null;
+};
+type SowRow = { id: string; client_id: string | null; status: string };
+
+function StatCard({
+  label,
+  value,
+  sub,
+  accent,
+  href,
+  linkLabel,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  accent?: string;
+  href?: string;
+  linkLabel?: string;
+}) {
+  return (
+    <div className="rounded-xl border border-brand-light bg-white p-5 shadow-sm">
+      <p className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
+      <p className={`text-2xl font-semibold ${accent ?? "text-brand-dark"}`}>{value}</p>
+      <div className="mt-1 flex items-center justify-between gap-3">
+        {sub && <p className="text-xs text-gray-400">{sub}</p>}
+        {href && (
+          <Link href={href} className="text-xs font-medium text-brand-mid transition-colors hover:text-brand-dark">
+            {linkLabel ?? "View all →"}
+          </Link>
+        )}
+      </div>
+    </div>
+  );
 }
 
-function StatCard({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: string }) {
+function UpNextRow({ client, next }: { client: ClientRow; next: NextStep }) {
+  const label = client.company || client.name;
+  const actionLabel = next.action?.kind === "link" ? next.action.label : "Open";
   return (
-    <div className="bg-white rounded-xl border border-brand-light p-5 shadow-sm">
-      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">{label}</p>
-      <p className={`text-2xl font-semibold ${accent ?? "text-brand-dark"}`}>{value}</p>
-      {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
+    <li className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+      <div className="min-w-0">
+        <Link href={`/dashboard/clients/${client.id}`} className="text-sm font-semibold text-brand-dark transition-colors hover:text-brand-mid">
+          {label}
+        </Link>
+        <p className="text-sm text-brand-dark/80">{next.title}</p>
+        <p className="text-xs text-gray-400">{next.detail}</p>
+      </div>
+      <Link
+        href={next.href}
+        className="flex-shrink-0 rounded-lg bg-brand-light px-3 py-1.5 text-xs font-semibold text-brand-dark transition-colors hover:bg-brand-mid hover:text-white"
+      >
+        {actionLabel} →
+      </Link>
+    </li>
+  );
+}
+
+function AttentionList({
+  tone,
+  title,
+  children,
+}: {
+  tone: "red" | "amber" | "green";
+  title: string;
+  children: React.ReactNode;
+}) {
+  const border = tone === "red" ? "border-red-200" : tone === "amber" ? "border-amber-200" : "border-brand-light";
+  const head =
+    tone === "red" ? "bg-red-50 border-red-200 text-red-700" : tone === "amber" ? "bg-amber-50 border-amber-200 text-amber-700" : "bg-brand-cream border-brand-light text-brand-dark";
+  const dot = tone === "red" ? "bg-red-500" : tone === "amber" ? "bg-amber-500" : "bg-brand-mid";
+  return (
+    <div className={`overflow-hidden rounded-2xl border bg-white shadow-sm ${border}`}>
+      <div className={`flex items-center gap-2 border-b px-5 py-3 ${head}`}>
+        <span className={`h-2 w-2 rounded-full ${dot}`} />
+        <p className="text-xs font-semibold uppercase tracking-wide">{title}</p>
+      </div>
+      <div className="divide-y divide-brand-light">{children}</div>
     </div>
   );
 }
@@ -26,198 +131,245 @@ export default async function DashboardPage() {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const [clientsRes, quotesRes, invoicesRes, contractsRes] = await Promise.all([
+  const [clientsRes, quotesRes, invoicesRes, contractsRes, sowsRes, inboxRes] = await Promise.all([
     supabase
       .from("clients")
-      .select("id, name, company, renewal_date")
-      .eq("user_id", user.id),
-    supabase.from("quotes").select("id, status, amount").eq("user_id", user.id),
-    supabase.from("invoices").select("id, status, amount, due_date, title, clients(name, company)").eq("user_id", user.id) as unknown as Promise<{
-      data: { id: string; status: string; amount: number | null; due_date: string | null; title: string; clients: { name: string | null; company: string | null } | null }[] | null;
-    }>,
-    supabase.from("contracts").select("id, status, clients(id, name, company)").eq("user_id", user.id) as unknown as Promise<{
-      data: { id: string; status: string; clients: { id: string; name: string | null; company: string | null } | null }[] | null;
-    }>,
+      .select("id, name, company, email, renewal_date, notes, lifecycle_stage")
+      .eq("user_id", user.id)
+      .order("name", { ascending: true }) as unknown as Promise<{ data: ClientRow[] | null }>,
+    supabase.from("quotes").select("id, client_id, status, amount").eq("user_id", user.id).order("created_at", { ascending: false }) as unknown as Promise<{ data: QuoteRow[] | null }>,
+    supabase
+      .from("invoices")
+      .select("id, client_id, status, amount, due_date, title, invoice_type, clients(name, company)")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false }) as unknown as Promise<{ data: InvoiceRow[] | null }>,
+    supabase
+      .from("contracts")
+      .select("id, client_id, status, quote_id, sent_at, signed_at, sign_token, clients(id, name, company)")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false }) as unknown as Promise<{ data: ContractRow[] | null }>,
+    supabase.from("scope_of_work").select("id, client_id, status").eq("user_id", user.id).order("created_at", { ascending: false }) as unknown as Promise<{ data: SowRow[] | null }>,
+    supabase.from("inquiries").select("id", { count: "exact", head: true }).eq("status", "new"),
   ]);
 
   const clients = clientsRes.data ?? [];
   const quotes = quotesRes.data ?? [];
   const invoices = invoicesRes.data ?? [];
   const contracts = contractsRes.data ?? [];
+  const sows = sowsRes.data ?? [];
+  const newLeads = inboxRes.count ?? 0;
 
-  // Stats
-  const totalClients = clients.length;
-  const openQuotes = quotes.filter((q) => q.status === "sent").length;
+  // ── Up next: one line per client ──────────────────────────────────────────
+  const forClient = <T extends { client_id: string | null }>(rows: T[], id: string) => rows.filter((r) => r.client_id === id);
+  const todo = clients.map((client) => {
+    const cq = forClient(quotes, client.id);
+    const ci = forClient(invoices, client.id);
+    const cc = forClient(contracts, client.id);
+    const cs = forClient(sows, client.id);
+    const lifecycle = computeLifecycle({
+      hasQuote: cq.some((q) => q.status === "sent" || q.status === "accepted"),
+      latestQuoteStatus: cq[0]?.status ?? null,
+      contract: cc[0] ?? null,
+      invoices: ci.map((i) => ({ invoice_type: i.invoice_type, status: i.status })),
+      renewalDate: client.renewal_date,
+      manualStage: client.lifecycle_stage,
+    });
+    const next = computeNextStep(
+      { clientId: client.id, notes: client.notes, renewalDate: client.renewal_date, stage: lifecycle.stage, sows: cs, quotes: cq, contracts: cc, invoices: ci },
+      "/dashboard",
+    );
+    return { client, lifecycle, next };
+  });
+  // Closest to money first.
+  const bySection = (a: { next: NextStep }, b: { next: NextStep }) => b.next.section - a.next.section;
+  const yourMove = todo.filter((t) => t.next.owner === "you").sort(bySection);
+  const waiting = todo.filter((t) => t.next.owner === "client").sort(bySection);
+  const quiet = todo.filter((t) => t.next.owner === "none");
+
+  // ── Money ─────────────────────────────────────────────────────────────────
   const totalRevenue = invoices.filter((i) => i.status === "paid").reduce((sum, i) => sum + (i.amount ?? 0), 0);
-  const outstandingInvoices = invoices.filter((i) => i.status === "sent" || i.status === "overdue").reduce((sum, i) => sum + (i.amount ?? 0), 0);
+  const outstanding = invoices.filter((i) => i.status === "sent" || i.status === "overdue").reduce((sum, i) => sum + (i.amount ?? 0), 0);
 
-  // Action items
-  const renewingSoon = clients
-    .filter((c) => {
-      if (!c.renewal_date) return false;
-      const days = daysUntil(c.renewal_date);
-      return days >= 0 && days <= 60;
-    })
-    .map((c) => ({ ...c, days: daysUntil(c.renewal_date!) }))
-    .sort((a, b) => a.days - b.days);
-
-  const overdueRenewals = clients.filter((c) => {
-    if (!c.renewal_date) return false;
-    return daysUntil(c.renewal_date) < 0;
-  });
-
+  // ── Needs attention: the calendar talking ────────────────────────────────
+  const overdueInvoices = invoices.filter((i) => effectiveInvoiceStatus(i) === "overdue");
   const unsignedContracts = contracts.filter((c) => c.status === "sent");
-
-  const overdueInvoices = invoices.filter((i) => {
-    if (i.status !== "sent" && i.status !== "overdue") return false;
-    if (!i.due_date) return false;
-    return daysUntil(i.due_date) < 0;
+  const renewingSoon = clients
+    .map((c) => ({ ...c, days: daysUntil(c.renewal_date) }))
+    .filter((c) => c.days !== null && c.days >= 0 && c.days <= 60)
+    .sort((a, b) => (a.days ?? 0) - (b.days ?? 0));
+  const overdueRenewals = clients.filter((c) => {
+    const d = daysUntil(c.renewal_date);
+    return d !== null && d < 0;
   });
-
-  const hasActions = renewingSoon.length > 0 || overdueRenewals.length > 0 || unsignedContracts.length > 0 || overdueInvoices.length > 0;
+  const attentionCount = overdueInvoices.length + unsignedContracts.length + renewingSoon.length + overdueRenewals.length;
+  const hasAttention = attentionCount > 0;
 
   return (
     <div className="p-8">
       {/* Hero */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-brand-dark via-brand-mid to-brand-mid/80 text-white px-8 py-7 mb-7 shadow-lg shadow-brand-mid/20">
-        <div className="pointer-events-none absolute -top-16 -right-10 w-56 h-56 rounded-full bg-white/10 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-20 left-1/3 w-64 h-64 rounded-full bg-brand-brown/20 blur-3xl" />
+      <div className="relative mb-7 overflow-hidden rounded-2xl bg-brand-dark px-8 py-7 text-white shadow-lg shadow-brand-dark/10">
         <div className="relative">
-          <p className="text-xs uppercase tracking-[0.2em] text-brand-light/70 mb-1.5">Overview</p>
+          <p className="mb-1.5 text-xs uppercase tracking-[0.2em] text-brand-light/70">Today</p>
           <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-brand-light/80 mt-1.5">Welcome back — here&apos;s where things stand today.</p>
+          <p className="mt-1.5 text-sm text-brand-light/80">
+            {yourMove.length === 0
+              ? "Nothing waiting on you. Nice."
+              : `${yourMove.length} thing${yourMove.length === 1 ? "" : "s"} waiting on you · ${waiting.length} waiting on clients`}
+          </p>
         </div>
-        <div className="relative grid grid-cols-4 gap-3 mt-6">
+        <div className="relative mt-6 grid grid-cols-4 gap-3">
           {[
-            { label: "Clients", value: totalClients },
-            { label: "Open Quotes", value: openQuotes },
-            { label: "Unsigned Contracts", value: unsignedContracts.length },
-            { label: "Action Items", value: renewingSoon.length + overdueRenewals.length + overdueInvoices.length },
+            { label: "Clients", value: clients.length },
+            { label: "Your move", value: yourMove.length },
+            { label: "Waiting on clients", value: waiting.length },
+            { label: "Needs attention", value: attentionCount },
           ].map((stat) => (
-            <div key={stat.label} className="rounded-xl bg-white/10 backdrop-blur-sm ring-1 ring-white/15 px-4 py-3">
+            <div key={stat.label} className="rounded-xl bg-white/10 px-4 py-3 ring-1 ring-white/15">
               <p className="text-2xl font-bold">{stat.value}</p>
-              <p className="text-[11px] uppercase tracking-wide text-brand-light/70 mt-0.5">{stat.label}</p>
+              <p className="mt-0.5 text-[11px] uppercase tracking-wide text-brand-light/70">{stat.label}</p>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Revenue stats */}
-      <div className="grid grid-cols-2 gap-4 mb-7">
-        <StatCard label="Total Revenue (Paid)" value={fmtMoney(totalRevenue)} sub="all time" accent="text-brand-mid" />
+      {/* Money */}
+      <div className="mb-7 grid grid-cols-2 gap-4">
+        <StatCard label="Total Revenue (Paid)" value={fmtMoney(totalRevenue)} sub="all time" accent="text-brand-mid" href="/dashboard/invoices" linkLabel="All invoices →" />
         <StatCard
           label="Outstanding"
-          value={fmtMoney(outstandingInvoices)}
+          value={fmtMoney(outstanding)}
           sub="sent & overdue invoices"
-          accent={outstandingInvoices > 0 ? "text-amber-600" : "text-brand-mid"}
+          accent={outstanding > 0 ? "text-amber-600" : "text-brand-mid"}
+          href="/dashboard/invoices"
+          linkLabel="All invoices →"
         />
       </div>
 
       <div className="grid grid-cols-3 gap-6">
-        {/* Action required */}
-        <div className="col-span-2 space-y-4">
-          <h2 className="text-sm font-semibold text-brand-dark uppercase tracking-wide">Action Required</h2>
+        {/* Up next */}
+        <div className="col-span-2 space-y-6">
+          <div>
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-brand-dark">Your move</h2>
+            {yourMove.length === 0 ? (
+              <div className="rounded-2xl border border-brand-light bg-white p-6 text-center shadow-sm">
+                <p className="text-sm text-gray-400">
+                  {clients.length === 0 ? "Add a client or convert a lead from the inbox to get started." : "Every client is waiting on someone else, or all set."}
+                </p>
+              </div>
+            ) : (
+              <ul className="divide-y divide-brand-light overflow-hidden rounded-2xl border border-brand-light bg-white shadow-sm">
+                {yourMove.map(({ client, next }) => (
+                  <UpNextRow key={client.id} client={client} next={next} />
+                ))}
+              </ul>
+            )}
+          </div>
 
-          {!hasActions && (
-            <div className="bg-white rounded-2xl border border-brand-light p-6 text-center shadow-sm">
-              <p className="text-sm text-gray-400">All clear — no action items right now.</p>
+          {waiting.length > 0 && (
+            <div>
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-brand-dark">Waiting on clients</h2>
+              <ul className="divide-y divide-brand-light overflow-hidden rounded-2xl border border-brand-light bg-white shadow-sm">
+                {waiting.map(({ client, next }) => (
+                  <UpNextRow key={client.id} client={client} next={next} />
+                ))}
+              </ul>
             </div>
           )}
 
-          {overdueRenewals.length > 0 && (
-            <div className="bg-white rounded-2xl border border-red-200 shadow-sm overflow-hidden">
-              <div className="px-5 py-3 bg-red-50 border-b border-red-200 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-red-500" />
-                <p className="text-xs font-semibold text-red-700 uppercase tracking-wide">Renewal Overdue</p>
-              </div>
-              <div className="divide-y divide-brand-light">
-                {overdueRenewals.map((c) => (
-                  <Link key={c.id} href={`/dashboard/clients/${c.id}`} className="flex items-center justify-between px-5 py-3 hover:bg-red-50/50 transition-colors">
-                    <span className="text-sm font-medium text-brand-dark">{c.company || c.name}</span>
-                    <span className="text-xs text-red-600 font-medium">
-                      {Math.abs(daysUntil(c.renewal_date!))} days overdue — reach out now
-                    </span>
+          {quiet.length > 0 && (
+            <p className="text-xs text-gray-400">
+              {quiet.length} active client{quiet.length === 1 ? "" : "s"} with nothing due:{" "}
+              {quiet.map(({ client }, i) => (
+                <span key={client.id}>
+                  {i > 0 && ", "}
+                  <Link href={`/dashboard/clients/${client.id}`} className="text-brand-mid hover:text-brand-dark">
+                    {client.company || client.name}
                   </Link>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {renewingSoon.length > 0 && (
-            <div className="bg-white rounded-2xl border border-amber-200 shadow-sm overflow-hidden">
-              <div className="px-5 py-3 bg-amber-50 border-b border-amber-200 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-amber-500" />
-                <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Renewals Coming Up</p>
-              </div>
-              <div className="divide-y divide-brand-light">
-                {renewingSoon.map((c) => (
-                  <Link key={c.id} href={`/dashboard/clients/${c.id}`} className="flex items-center justify-between px-5 py-3 hover:bg-amber-50/50 transition-colors">
-                    <span className="text-sm font-medium text-brand-dark">{c.company || c.name}</span>
-                    <span className={`text-xs font-medium ${c.days <= 14 ? "text-amber-600" : "text-gray-500"}`}>
-                      {c.days === 0 ? "Renews today" : `Renews in ${c.days} day${c.days === 1 ? "" : "s"}`}
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {unsignedContracts.length > 0 && (
-            <div className="bg-white rounded-2xl border border-brand-light shadow-sm overflow-hidden">
-              <div className="px-5 py-3 bg-brand-cream border-b border-brand-light flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-brand-mid" />
-                <p className="text-xs font-semibold text-brand-dark uppercase tracking-wide">Awaiting Signature</p>
-              </div>
-              <div className="divide-y divide-brand-light">
-                {unsignedContracts.map((c) => (
-                  <Link key={c.id} href={`/dashboard/contracts/${c.id}`} className="flex items-center justify-between px-5 py-3 hover:bg-brand-cream/60 transition-colors">
-                    <span className="text-sm font-medium text-brand-dark">{c.clients?.company || c.clients?.name || "Unknown client"}</span>
-                    <span className="text-xs text-brand-mid font-medium">Contract sent — awaiting signature →</span>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {overdueInvoices.length > 0 && (
-            <div className="bg-white rounded-2xl border border-red-200 shadow-sm overflow-hidden">
-              <div className="px-5 py-3 bg-red-50 border-b border-red-200 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-red-500" />
-                <p className="text-xs font-semibold text-red-700 uppercase tracking-wide">Overdue Invoices</p>
-              </div>
-              <div className="divide-y divide-brand-light">
-                {overdueInvoices.map((inv) => (
-                  <Link key={inv.id} href={`/dashboard/invoices/${inv.id}`} className="flex items-center justify-between px-5 py-3 hover:bg-red-50/50 transition-colors">
-                    <span className="text-sm font-medium text-brand-dark">{inv.title}</span>
-                    <span className="text-xs text-red-600 font-medium">{fmtMoney(inv.amount)} — {Math.abs(daysUntil(inv.due_date!))} days past due</span>
-                  </Link>
-                ))}
-              </div>
-            </div>
+                </span>
+              ))}
+              .
+            </p>
           )}
         </div>
 
-        {/* Quick actions */}
-        <div>
-          <h2 className="text-sm font-semibold text-brand-dark uppercase tracking-wide mb-4">Quick Actions</h2>
-          <div className="space-y-3">
-            {[
-              { label: "Add a Client", href: "/dashboard/clients/new", desc: "Save contact info" },
-              { label: "Create a Quote", href: "/dashboard/quotes/new", desc: "Draft a price estimate" },
-              { label: "New Invoice", href: "/dashboard/invoices/new", desc: "Bill a client" },
-              { label: "View Contracts", href: "/dashboard/contracts", desc: "Track signed agreements" },
-            ].map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="group block bg-white rounded-xl border border-brand-light p-4 hover:border-brand-mid hover:shadow-sm transition-all"
-              >
-                <p className="text-sm font-semibold text-brand-dark group-hover:text-brand-mid transition-colors">
-                  {item.label} →
+        {/* Needs attention + quick actions */}
+        <div className="space-y-6">
+          <div>
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-brand-dark">Needs attention</h2>
+            {!hasAttention && (
+              <div className="rounded-2xl border border-brand-light bg-white p-6 text-center shadow-sm">
+                <p className="text-sm text-gray-400">All clear.</p>
+              </div>
+            )}
+            <div className="space-y-4">
+              {overdueRenewals.length > 0 && (
+                <AttentionList tone="red" title="Renewal overdue">
+                  {overdueRenewals.map((c) => (
+                    <Link key={c.id} href={`/dashboard/clients/${c.id}`} className="flex items-center justify-between px-5 py-3 transition-colors hover:bg-red-50/50">
+                      <span className="text-sm font-medium text-brand-dark">{c.company || c.name}</span>
+                      <span className="text-xs font-medium text-red-600">{Math.abs(daysUntil(c.renewal_date) ?? 0)} days</span>
+                    </Link>
+                  ))}
+                </AttentionList>
+              )}
+              {overdueInvoices.length > 0 && (
+                <AttentionList tone="red" title="Overdue invoices">
+                  {overdueInvoices.map((inv) => (
+                    <Link key={inv.id} href={`/dashboard/invoices/${inv.id}`} className="flex items-center justify-between gap-3 px-5 py-3 transition-colors hover:bg-red-50/50">
+                      <span className="min-w-0 truncate text-sm font-medium text-brand-dark">
+                        {inv.clients?.company || inv.clients?.name || inv.title}
+                      </span>
+                      <span className="flex-shrink-0 text-xs font-medium text-red-600">
+                        {fmtMoney(inv.amount)} · {daysPastDue(inv)}d
+                      </span>
+                    </Link>
+                  ))}
+                </AttentionList>
+              )}
+              {renewingSoon.length > 0 && (
+                <AttentionList tone="amber" title="Renewals coming up">
+                  {renewingSoon.map((c) => (
+                    <Link key={c.id} href={`/dashboard/clients/${c.id}`} className="flex items-center justify-between px-5 py-3 transition-colors hover:bg-amber-50/50">
+                      <span className="text-sm font-medium text-brand-dark">{c.company || c.name}</span>
+                      <span className={`text-xs font-medium ${(c.days ?? 99) <= 14 ? "text-amber-600" : "text-gray-500"}`}>
+                        {c.days === 0 ? "today" : `${c.days}d`}
+                      </span>
+                    </Link>
+                  ))}
+                </AttentionList>
+              )}
+              {unsignedContracts.length > 0 && (
+                <AttentionList tone="green" title="Awaiting signature">
+                  {unsignedContracts.map((c) => (
+                    <Link key={c.id} href={`/dashboard/contracts/${c.id}`} className="flex items-center justify-between px-5 py-3 transition-colors hover:bg-brand-cream/60">
+                      <span className="text-sm font-medium text-brand-dark">{c.clients?.company || c.clients?.name || "Client"}</span>
+                      <span className="text-xs font-medium text-brand-mid">
+                        sent {c.sent_at ? new Date(c.sent_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}
+                      </span>
+                    </Link>
+                  ))}
+                </AttentionList>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-brand-dark">Quick actions</h2>
+            <div className="space-y-3">
+              <Link href="/dashboard/inbox" className="group block rounded-xl border border-brand-light bg-white p-4 transition-all hover:border-brand-mid hover:shadow-sm">
+                <p className="flex items-center justify-between text-sm font-semibold text-brand-dark transition-colors group-hover:text-brand-mid">
+                  Inbox →
+                  {newLeads > 0 && (
+                    <span className="rounded-full bg-brand-light px-2 py-0.5 text-[11px] font-bold text-brand-dark">{newLeads} new</span>
+                  )}
                 </p>
-                <p className="text-xs text-gray-400 mt-0.5">{item.desc}</p>
+                <p className="mt-0.5 text-xs text-gray-400">Leads from the website</p>
               </Link>
-            ))}
+              <Link href="/dashboard/clients/new" className="group block rounded-xl border border-brand-light bg-white p-4 transition-all hover:border-brand-mid hover:shadow-sm">
+                <p className="text-sm font-semibold text-brand-dark transition-colors group-hover:text-brand-mid">Add a client →</p>
+                <p className="mt-0.5 text-xs text-gray-400">Everything else starts from their page</p>
+              </Link>
+            </div>
           </div>
         </div>
       </div>

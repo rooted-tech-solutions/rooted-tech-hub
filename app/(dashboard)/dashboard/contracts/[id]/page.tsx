@@ -1,8 +1,10 @@
 import Link from "next/link";
-import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { deleteContractRecord } from "../actions";
+import ConfirmButton from "@/components/ui/ConfirmButton";
+import { StatusBadge } from "../../quotes/statusBadge";
+import { deleteContractRecord, sendPackage } from "../actions";
+import { signLinkFor } from "../links";
 import { contractClauses, type ContractSnapshot } from "../contractTerms";
 import CopyButton from "@/components/ui/CopyButton";
 
@@ -37,14 +39,16 @@ export default async function ContractDetailPage({ params, searchParams }: { par
 
   const snapshot = contract.snapshot as ContractSnapshot;
   const clauses = contractClauses(snapshot);
-  const headersList = headers();
-  const host = headersList.get("host") ?? "localhost:3003";
-  const proto = headersList.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
-  const signLink = `${proto}://${host}/sign/${contract.sign_token}`;
+  const signLink = signLinkFor(contract.sign_token);
 
   async function handleDelete() {
     "use server";
-    await deleteContractRecord(contract!.id);
+    await deleteContractRecord(contract!.id, searchParams.from);
+  }
+
+  async function handleSend() {
+    "use server";
+    await sendPackage(contract!.id);
   }
 
   return (
@@ -58,6 +62,7 @@ export default async function ContractDetailPage({ params, searchParams }: { par
             <h1 className="text-2xl font-semibold text-brand-dark">
               Contract — {contract.clients?.company || contract.clients?.name || "Untitled"}
             </h1>
+            <StatusBadge status={contract.status} />
           </div>
           {contract.quotes?.title && (
             <Link href={`/dashboard/quotes/${contract.quotes.id}`} className="text-sm text-brand-mid hover:text-brand-dark transition-colors mt-1 inline-block">
@@ -66,10 +71,18 @@ export default async function ContractDetailPage({ params, searchParams }: { par
           )}
         </div>
         <div className="flex items-center gap-3">
+          {contract.status === "draft" && (
+            <form action={handleSend}>
+              <button
+                type="submit"
+                className="bg-brand-mid text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand-dark transition-colors"
+              >
+                Send the package
+              </button>
+            </form>
+          )}
           <form action={handleDelete}>
-            <button type="submit" className="text-sm font-medium text-red-600 hover:text-red-800 transition-colors px-2 py-2">
-              Delete
-            </button>
+            <ConfirmButton label="Delete" disabled={contract.status === "signed"} disabledReason="A signed agreement stays on record." />
           </form>
         </div>
       </div>
@@ -90,7 +103,9 @@ export default async function ContractDetailPage({ params, searchParams }: { par
         <div className="bg-white rounded-2xl border border-brand-light p-5 shadow-sm">
           <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-brand-mid mb-3">Signing Link</p>
           {contract.status === "draft" ? (
-            <p className="text-sm text-gray-400">Mark this contract as sent to generate an active signing link to share with the client.</p>
+            <p className="text-sm text-gray-400">
+              Press <span className="font-semibold text-brand-dark">Send the package</span> to activate the signing link. That also marks the quote and scope of work as sent — the client receives all three together.
+            </p>
           ) : (
             <>
               <p className="text-xs text-gray-500 mb-2">Share this link with the client — they can review and sign without an account.</p>

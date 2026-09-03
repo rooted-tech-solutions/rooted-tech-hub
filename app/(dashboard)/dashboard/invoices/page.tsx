@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { StatusBadge } from "../quotes/statusBadge";
+import { effectiveInvoiceStatus } from "./status";
 
 function fmtDate(value: string | null) {
   if (!value) return "—";
@@ -96,7 +97,7 @@ export default async function InvoicesPage() {
                   <td className="px-5 py-3 text-gray-600">{invoice.clients?.name || "—"}</td>
                   <td className="px-5 py-3 text-gray-600">{fmtMoney(invoice.amount)}</td>
                   <td className="px-5 py-3">
-                    <StatusBadge status={invoice.status} />
+                    <StatusBadge status={effectiveInvoiceStatus(invoice)} />
                   </td>
                   <td className="px-5 py-3 text-gray-600">{fmtDate(invoice.due_date)}</td>
                 </tr>

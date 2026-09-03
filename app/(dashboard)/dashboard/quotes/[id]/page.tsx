@@ -2,7 +2,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { deleteQuoteRecord } from "../actions";
+import ConfirmButton from "@/components/ui/ConfirmButton";
+import { StatusBadge } from "../statusBadge";
+import QuoteSummary from "../QuoteSummary";
+import { deleteQuoteRecord, updateQuoteStatus } from "../actions";
 import { generateContractFromQuote } from "../../contracts/actions";
 import { annualValue, fmtMoney, quoteNumber } from "../lineItems";
 import type { LineItem } from "../actions";
@@ -90,8 +93,21 @@ function LineItemSection({
   );
 }
 
-export default async function QuoteDetailPage({ params, searchParams }: { params: { id: string }; searchParams: { from?: string } }) {
+export default async function QuoteDetailPage({
+  params,
+  searchParams,
+}: {
+  params: { id: string };
+  searchParams: { from?: string; view?: string };
+}) {
   const backHref = searchParams.from ?? "/dashboard/quotes";
+  // The client-facing document is the phase summary. The itemized hours × rate
+  // table is the pricing worksheet — one toggle away, never the default.
+  const itemized = searchParams.view === "itemized";
+  const toggleParams = new URLSearchParams();
+  if (searchParams.from) toggleParams.set("from", searchParams.from);
+  if (!itemized) toggleParams.set("view", "itemized");
+  const toggleHref = `/dashboard/quotes/${params.id}${toggleParams.size ? `?${toggleParams}` : ""}`;
   const backLabel = searchParams.from ? "← Back to Client" : "← Back to Quotes";
   const supabase = createClient();
   const {
@@ -130,6 +146,21 @@ export default async function QuoteDetailPage({ params, searchParams }: { params
     await generateContractFromQuote(quote!.id);
   }
 
+  async function handleStatus(formData: FormData) {
+    "use server";
+    await updateQuoteStatus(quote!.id, String(formData.get("status") ?? ""), quote!.client_id ?? undefined);
+  }
+
+  const stamps = [
+    ["Sent", quote.sent_at as string | null | undefined],
+    ["Accepted", quote.accepted_at as string | null | undefined],
+    ["Declined", quote.declined_at as string | null | undefined],
+  ]
+    .filter(([, v]) => v)
+    .map(([k, v]) => `${k} ${new Date(v as string).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`);
+  const statusButton =
+    "whitespace-nowrap bg-brand-light text-brand-dark text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand-mid hover:text-white transition-colors";
+
   return (
     <div className="p-8">
       <div className="mb-6 flex items-start justify-between print:hidden">
@@ -142,13 +173,39 @@ export default async function QuoteDetailPage({ params, searchParams }: { params
           </Link>
           <div className="flex items-center gap-3 mt-2">
             <h1 className="text-2xl font-semibold text-brand-dark">{quote.title}</h1>
+            <StatusBadge status={quote.status} />
           </div>
+          {stamps.length > 0 && <p className="mt-1 text-xs text-gray-400">{stamps.join(" · ")}</p>}
         </div>
         <div className="flex items-center gap-3">
+          <Link
+            href={toggleHref}
+            className="whitespace-nowrap text-sm font-medium text-gray-500 hover:text-brand-dark transition-colors px-2 py-2"
+          >
+            {itemized ? "Show summary" : "Show line items"}
+          </Link>
+          {quote.status === "draft" && (
+            <form action={handleStatus}>
+              <input type="hidden" name="status" value="sent" />
+              <button type="submit" className={statusButton}>Mark sent</button>
+            </form>
+          )}
+          {quote.status === "sent" && (
+            <>
+              <form action={handleStatus}>
+                <input type="hidden" name="status" value="accepted" />
+                <button type="submit" className={statusButton}>Accepted</button>
+              </form>
+              <form action={handleStatus}>
+                <input type="hidden" name="status" value="declined" />
+                <button type="submit" className="text-sm font-medium text-gray-500 hover:text-brand-dark transition-colors px-2 py-2">Declined</button>
+              </form>
+            </>
+          )}
           {contract ? (
             <Link
               href={`/dashboard/contracts/${contract.id}`}
-              className="bg-brand-light text-brand-dark text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand-mid hover:text-white transition-colors"
+              className="whitespace-nowrap bg-brand-light text-brand-dark text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand-mid hover:text-white transition-colors"
             >
               View Contract
             </Link>
@@ -156,7 +213,7 @@ export default async function QuoteDetailPage({ params, searchParams }: { params
             <form action={handleGenerateContract}>
               <button
                 type="submit"
-                className="bg-brand-light text-brand-dark text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand-mid hover:text-white transition-colors"
+                className="whitespace-nowrap bg-brand-light text-brand-dark text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand-mid hover:text-white transition-colors"
               >
                 Generate Contract
               </button>
@@ -169,12 +226,7 @@ export default async function QuoteDetailPage({ params, searchParams }: { params
             Edit
           </Link>
           <form action={handleDelete}>
-            <button
-              type="submit"
-              className="text-sm font-medium text-red-600 hover:text-red-800 transition-colors px-2 py-2"
-            >
-              Delete
-            </button>
+            <ConfirmButton label="Delete" disabled={Boolean(contract)} disabledReason="Delete its contract first." />
           </form>
         </div>
       </div>
@@ -224,22 +276,31 @@ export default async function QuoteDetailPage({ params, searchParams }: { params
             </div>
           </div>
 
-          <div className="space-y-7">
-            <LineItemSection
-              num={1}
-              title="Build Phase"
-              items={buildItems}
-              subtotalLabel="Total Build Cost"
-              subtotal={quote.build_total ?? 0}
+          {itemized ? (
+            <div className="space-y-7">
+              <LineItemSection
+                num={1}
+                title="Build Phase"
+                items={buildItems}
+                subtotalLabel="Total Build Cost"
+                subtotal={quote.build_total ?? 0}
+              />
+              <LineItemSection
+                num={2}
+                title="Annual Maintenance"
+                items={maintItems}
+                subtotalLabel="Monthly Rate (billed annually)"
+                subtotal={quote.monthly_retainer ?? 0}
+              />
+            </div>
+          ) : (
+            <QuoteSummary
+              buildItems={buildItems}
+              maintItems={maintItems}
+              buildTotal={quote.build_total}
+              monthlyRetainer={quote.monthly_retainer}
             />
-            <LineItemSection
-              num={2}
-              title="Annual Maintenance"
-              items={maintItems}
-              subtotalLabel="Monthly Rate (billed annually)"
-              subtotal={quote.monthly_retainer ?? 0}
-            />
-          </div>
+          )}
 
           {/* Grand totals */}
           {(() => {

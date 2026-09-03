@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
+import { addDaysISO } from "@/lib/dates";
 import LineItemTable from "./LineItemTable";
 import { BUILD_ITEMS, MAINTENANCE_ITEMS, fmtMoney } from "./lineItems";
 import type { LineItem } from "./actions";
@@ -76,11 +77,7 @@ export default function QuoteForm({
 
   function handleIssuedDateChange(val: string) {
     setIssuedDate(val);
-    if (val) {
-      const d = new Date(val + "T00:00:00");
-      d.setDate(d.getDate() + 30);
-      setExpiryDate(d.toISOString().slice(0, 10));
-    }
+    if (val) setExpiryDate(addDaysISO(val, 30));
   }
 
   return (

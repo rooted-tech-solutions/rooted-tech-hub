@@ -2,7 +2,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { deleteSowRecord } from "../actions";
+import ConfirmButton from "@/components/ui/ConfirmButton";
+import { StatusBadge } from "../../quotes/statusBadge";
+import { deleteSowRecord, updateSowStatus } from "../actions";
 import PrintButton from "@/components/ui/PrintButton";
 import type { SowItem } from "../actions";
 
@@ -67,6 +69,24 @@ export default async function SowDetailPage({
     await deleteSowRecord(sow!.id, searchParams.from);
   }
 
+  // Plain locals only inside inline actions — see clients/[id]/page.tsx.
+  const sowId: string = sow.id;
+  const clientId: string | undefined = client?.id;
+
+  async function handleStatus(formData: FormData) {
+    "use server";
+    await updateSowStatus(sowId, String(formData.get("status") ?? ""), clientId);
+  }
+
+  const stamps = [
+    ["Sent", sow.sent_at as string | null | undefined],
+    ["Approved", sow.approved_at as string | null | undefined],
+  ]
+    .filter(([, v]) => v)
+    .map(([k, v]) => `${k} ${new Date(v as string).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`);
+  const statusButton =
+    "bg-brand-light text-brand-dark text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand-mid hover:text-white transition-colors";
+
   return (
     <div className="p-8">
       {/* Action bar */}
@@ -79,7 +99,9 @@ export default async function SowDetailPage({
             <h1 className="text-2xl font-semibold text-brand-dark">
               {sow.title || sow.sow_number}
             </h1>
+            <StatusBadge status={sow.status} />
           </div>
+          {stamps.length > 0 && <p className="mt-1 text-xs text-gray-400">{stamps.join(" · ")}</p>}
           {quote && (
             <Link href={`/dashboard/quotes/${quote.id}?from=/dashboard/scope/${sow.id}`} className="text-sm text-brand-mid hover:text-brand-dark transition-colors mt-1 inline-block">
               Linked to: {quote.title}
@@ -87,6 +109,18 @@ export default async function SowDetailPage({
           )}
         </div>
         <div className="flex items-center gap-3">
+          {sow.status === "draft" && (
+            <form action={handleStatus}>
+              <input type="hidden" name="status" value="sent" />
+              <button type="submit" className={statusButton}>Mark sent</button>
+            </form>
+          )}
+          {sow.status === "sent" && (
+            <form action={handleStatus}>
+              <input type="hidden" name="status" value="approved" />
+              <button type="submit" className={statusButton}>Approved</button>
+            </form>
+          )}
           <PrintButton label="Download PDF" />
           <Link
             href={`/dashboard/scope/${sow.id}/edit${searchParams.from ? `?from=${searchParams.from}` : ""}`}
@@ -95,9 +129,7 @@ export default async function SowDetailPage({
             Edit
           </Link>
           <form action={handleDelete}>
-            <button type="submit" className="text-sm font-medium text-red-600 hover:text-red-800 transition-colors px-2 py-2">
-              Delete
-            </button>
+            <ConfirmButton label="Delete" disabled={sow.status === "approved"} disabledReason="Approved scope is part of the agreement." />
           </form>
         </div>
       </div>

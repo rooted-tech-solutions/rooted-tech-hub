@@ -22,6 +22,9 @@ export const SITE = {
   domain: "https://rootedtechsolutions.vercel.app",
 
   email: "rootedtechsolutions@gmail.com",
+
+  /** The business calendar. Date-only values (issued, due, paid, renewal) are computed in this zone. */
+  timeZone: "America/Chicago",
   // Widened to string: these are empty placeholders, and `as const` would type
   // them as the literal "" — making every `if (SITE.phone)` branch unreachable.
   phone: "" as string,

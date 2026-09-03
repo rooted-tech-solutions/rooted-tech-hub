@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { addDaysISO, addYearsISO, todayISO } from "@/lib/dates";
 
 const STATUSES = ["draft", "sent", "paid", "overdue", "cancelled"] as const;
 const INVOICE_TYPES = ["deposit", "final_payment", "annual_renewal", "custom"] as const;
@@ -137,11 +138,49 @@ export async function deleteInvoiceRecord(id: string, from?: string) {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  // Paid invoices are part of the books. They stay.
+  const { data: existing } = await supabase
+    .from("invoices")
+    .select("status")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .single();
+  if (existing?.status === "paid") redirect(from ?? `/dashboard/invoices/${id}`);
+
   await supabase.from("invoices").delete().eq("id", id).eq("user_id", user.id);
 
   revalidatePath("/dashboard/invoices");
   revalidatePath("/dashboard/clients");
   redirect(from ?? "/dashboard/invoices");
+}
+
+/** Draft → sent. Stamps the issue date if it was never set, so "due" has something to count from. */
+export async function markInvoiceSent(id: string, clientId?: string) {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const today = todayISO();
+  const { data: invoice } = await supabase
+    .from("invoices")
+    .select("issued_date, due_date, client_id")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .single();
+
+  const patch: Record<string, unknown> = { status: "sent" };
+  if (!invoice?.issued_date) patch.issued_date = today;
+  if (!invoice?.due_date) patch.due_date = addDaysISO(today, 30);
+  await supabase.from("invoices").update(patch).eq("id", id).eq("user_id", user.id).eq("status", "draft");
+
+  const resolvedClientId = clientId ?? (invoice?.client_id as string | null | undefined);
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/invoices");
+  revalidatePath(`/dashboard/invoices/${id}`);
+  if (resolvedClientId) revalidatePath(`/dashboard/clients/${resolvedClientId}`);
+  revalidatePath("/dashboard/clients");
 }
 
 export async function markInvoicePaid(id: string, clientId?: string) {
@@ -151,7 +190,7 @@ export async function markInvoicePaid(id: string, clientId?: string) {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISO();
 
   // Fetch invoice type and client_id before updating
   const { data: invoice } = await supabase
@@ -167,18 +206,30 @@ export async function markInvoicePaid(id: string, clientId?: string) {
     .eq("id", id)
     .eq("user_id", user.id);
 
-  // Auto-set renewal_date on the client when the final payment is received
+  // The final payment starts the care plan: it renews one year from today.
+  // A renewal payment extends it one year from the *existing* renewal date,
+  // so the anniversary holds whether the client pays early or late.
   const resolvedClientId = clientId ?? (invoice?.client_id as string | null | undefined);
-  if ((invoice as { invoice_type?: string | null } | null)?.invoice_type === "final_payment" && resolvedClientId) {
-    const renewal = new Date();
-    renewal.setFullYear(renewal.getFullYear() + 1);
+  const invoiceType = (invoice as { invoice_type?: string | null } | null)?.invoice_type;
+  if (resolvedClientId && (invoiceType === "final_payment" || invoiceType === "annual_renewal")) {
+    let baseISO = today;
+    if (invoiceType === "annual_renewal") {
+      const { data: client } = await supabase
+        .from("clients")
+        .select("renewal_date")
+        .eq("id", resolvedClientId)
+        .eq("user_id", user.id)
+        .single();
+      if (client?.renewal_date) baseISO = client.renewal_date as string;
+    }
     await supabase
       .from("clients")
-      .update({ renewal_date: renewal.toISOString().slice(0, 10) })
+      .update({ renewal_date: addYearsISO(baseISO, 1) })
       .eq("id", resolvedClientId)
       .eq("user_id", user.id);
   }
 
+  revalidatePath("/dashboard");
   revalidatePath("/dashboard/invoices");
   revalidatePath(`/dashboard/invoices/${id}`);
   if (resolvedClientId) revalidatePath(`/dashboard/clients/${resolvedClientId}`);

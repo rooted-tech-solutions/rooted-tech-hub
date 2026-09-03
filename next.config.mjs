@@ -33,7 +33,9 @@ const csp = [
   "base-uri 'self'",
   "form-action 'self'",
   "object-src 'none'",
-  "upgrade-insecure-requests",
+  // Only in production: on http://localhost this makes the browser upgrade
+  // every fetch to https, which breaks client-side navigation in dev.
+  ...(process.env.NODE_ENV === "production" ? ["upgrade-insecure-requests"] : []),
 ].join("; ");
 
 const securityHeaders = [

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { updateWithOptional } from "@/lib/supabase/updateWithOptional";
 
 const STATUSES = ["draft", "sent", "accepted", "declined", "expired"] as const;
 
@@ -130,10 +131,20 @@ export async function deleteQuoteRecord(id: string, from?: string) {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  // A quote with a contract behind it is part of an agreement. Remove the
+  // contract first (only drafts can be), then the quote.
+  const { count } = await supabase
+    .from("contracts")
+    .select("id", { count: "exact", head: true })
+    .eq("quote_id", id)
+    .eq("user_id", user.id);
+  if ((count ?? 0) > 0) redirect(from ?? `/dashboard/quotes/${id}`);
+
   await supabase.from("quotes").delete().eq("id", id).eq("user_id", user.id);
 
   revalidatePath("/dashboard/quotes");
   revalidatePath("/dashboard/clients");
+  revalidatePath("/dashboard");
   redirect(from ?? "/dashboard/quotes");
 }
 
@@ -144,10 +155,19 @@ export async function updateQuoteStatus(id: string, status: string, clientId?: s
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  await supabase.from("quotes").update({ status }).eq("id", id).eq("user_id", user.id);
+  if (!STATUSES.includes(status as (typeof STATUSES)[number])) return;
+
+  // Stamp the handoffs — see migration 009. Tolerates the column not existing yet.
+  const now = new Date().toISOString();
+  const stamp: Record<string, unknown> = {};
+  if (status === "sent") stamp.sent_at = now;
+  if (status === "accepted") stamp.accepted_at = now;
+  if (status === "declined") stamp.declined_at = now;
+  await updateWithOptional(supabase, "quotes", { id, user_id: user.id }, { status }, stamp);
 
   revalidatePath("/dashboard/quotes");
   revalidatePath(`/dashboard/quotes/${id}`);
   if (clientId) revalidatePath(`/dashboard/clients/${clientId}`);
   revalidatePath("/dashboard/clients");
+  revalidatePath("/dashboard");
 }

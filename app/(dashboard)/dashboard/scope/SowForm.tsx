@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
+import { todayISO } from "@/lib/dates";
 import type { SowItem, SowValues } from "./actions";
 
 type Client = { id: string; name: string; company: string | null };
@@ -204,7 +205,7 @@ export default function SowForm({
           id="issued_date"
           name="issued_date"
           type="date"
-          defaultValue={initialValues.issued_date ?? new Date().toISOString().slice(0, 10)}
+          defaultValue={initialValues.issued_date ?? todayISO()}
           className={inputClass}
         />
       </div>
