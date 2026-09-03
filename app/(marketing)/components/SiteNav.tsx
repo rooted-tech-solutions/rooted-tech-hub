@@ -32,12 +32,12 @@ export default function SiteNav() {
           />
         </Link>
 
-        <div className="ml-auto hidden items-center gap-8 md:flex">
+        <div className="ml-auto hidden items-center gap-1 md:flex">
           {links.map((l) => (
             <a
               key={l.href}
               href={l.href}
-              className="text-[15px] font-medium text-site-body transition-colors hover:text-site-ink"
+              className="rounded-full px-3.5 py-2 text-[15px] font-medium text-site-body transition-colors hover:bg-white/70 hover:text-site-ink"
             >
               {l.label}
             </a>

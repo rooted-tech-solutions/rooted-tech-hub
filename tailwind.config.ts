@@ -39,7 +39,14 @@ const config: Config = {
           wash: "#F4FAF6",    // lightest band
           line: "#E4EFE8",    // hairlines
           accent: "#2D6A4F",  // = brand-mid, CTAs
-          deep: "#14392A",    // footer
+          deep: "#14392A",    // footer, dark band
+          // Warm counterpoint. The logo's roots are brown, but the site used
+          // none of it — every token above is one hue, which is why the page
+          // read as flat. Clay is 4.7:1 on white, so it can carry small
+          // labels and not just decoration. Sand is its light band.
+          clay: "#B45A2F",
+          sand: "#F7EFE6",
+          forest: "#0C2118",  // deepest gradient stop behind the dark band
         },
       },
     },

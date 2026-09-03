@@ -8,9 +8,9 @@ import { submitInquiry, type InquiryState } from "./actions";
 const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
 const inputClass =
-  "w-full min-h-[52px] rounded-2xl bg-site-wash px-4 py-3 text-base text-site-ink " +
+  "w-full min-h-[52px] rounded-2xl bg-site-wash px-4 py-3 text-base text-site-ink ring-1 ring-site-line " +
   "placeholder:text-site-mute focus:bg-white focus:outline-none focus:ring-2 " +
-  "focus:ring-site-accent/40 transition-colors";
+  "focus:ring-site-accent/40 transition";
 
 const labelClass = "block text-sm font-semibold text-site-ink mb-2";
 
