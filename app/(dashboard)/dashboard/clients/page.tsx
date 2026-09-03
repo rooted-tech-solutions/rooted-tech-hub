@@ -50,7 +50,7 @@ export default async function ClientsPage() {
       .select("id, name, company, email, phone, renewal_date, notes, lifecycle_stage")
       .eq("user_id", user.id)
       .order("name", { ascending: true }) as unknown as Promise<{ data: ClientRow[] | null }>,
-    supabase.from("quotes").select("id, client_id, status").eq("user_id", user.id).order("created_at", { ascending: false }),
+    supabase.from("quotes").select("*").eq("user_id", user.id).order("created_at", { ascending: false }) as unknown as Promise<{ data: { id: string; client_id: string | null; status: string; kind?: string | null }[] | null }>,
     supabase.from("invoices").select("id, client_id, invoice_type, status, due_date").eq("user_id", user.id).order("created_at", { ascending: false }),
     supabase
       .from("contracts")
@@ -64,7 +64,7 @@ export default async function ClientsPage() {
   const forClient = <T extends { client_id: string | null }>(rows: T[] | null, id: string) => (rows ?? []).filter((r) => r.client_id === id);
 
   const rows = clients.map((client) => {
-    const quotes = forClient(quotesRes.data, client.id);
+    const quotes = forClient(quotesRes.data, client.id).filter((q) => (q.kind ?? "proposal") !== "change_order");
     const invoices = forClient(invoicesRes.data, client.id);
     const contracts = forClient(contractsRes.data, client.id);
     const sows = forClient(sowsRes.data, client.id);
@@ -91,7 +91,7 @@ export default async function ClientsPage() {
   const yourMove = rows.filter((r) => r.next.owner === "you").length;
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="mb-1 text-xs uppercase tracking-[0.2em] text-gray-400">Relationships</p>
@@ -116,7 +116,7 @@ export default async function ClientsPage() {
           </Link>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-brand-light bg-white shadow-sm">
+        <div className="overflow-x-auto rounded-2xl border border-brand-light bg-white shadow-sm">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-brand-light text-left text-xs uppercase tracking-wide text-gray-500">

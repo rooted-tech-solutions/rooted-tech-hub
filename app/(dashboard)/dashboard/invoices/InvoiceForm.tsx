@@ -13,6 +13,7 @@ type Quote = {
   scope: string | null;
   build_total: number | null;
   monthly_retainer: number | null;
+  kind?: string | null;
 };
 
 type InvoiceFormValues = {
@@ -63,6 +64,7 @@ function termsFor(quote: Quote | null, contractTerms: Record<string, ContractTer
 }
 
 function computeAmount(type: string, quote: Quote | null, contractTerms: Record<string, ContractTerms>): string {
+  if (quote?.kind === "change_order") return String((quote.build_total ?? 0).toFixed(2));
   const terms = termsFor(quote, contractTerms);
   if (!terms) return "";
   const contractTotal = terms.build + terms.annual;
@@ -78,6 +80,10 @@ function computeAmount(type: string, quote: Quote | null, contractTerms: Record<
 }
 
 function typeLabel(type: string, quote: Quote | null, contractTerms: Record<string, ContractTerms>): string {
+  if (quote?.kind === "change_order") {
+    const fmt = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
+    return `Change order total: ${fmt(quote.build_total ?? 0)}`;
+  }
   const terms = termsFor(quote, contractTerms);
   if (!terms) return "";
   const contractTotal = terms.build + terms.annual;
@@ -157,7 +163,10 @@ export default function InvoiceForm({
   }
 
   const selectedQuote = quotes.find((q) => q.id === quoteId) ?? null;
-  const isAutoAmount = invoiceType !== "custom";
+  const isChangeOrder = selectedQuote?.kind === "change_order";
+  // Deposit/final/renewal are computed from the terms; a change order's
+  // amount is simply its total. Only a free-form custom invoice is typed.
+  const isAutoAmount = invoiceType !== "custom" || isChangeOrder;
   const autoAmount = isAutoAmount ? computeAmount(invoiceType, selectedQuote, contractTerms) : "";
   const hint = isAutoAmount ? typeLabel(invoiceType, selectedQuote, contractTerms) : "";
 

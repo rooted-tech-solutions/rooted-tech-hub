@@ -40,11 +40,7 @@ export default async function NewInvoicePage({
 
   const [{ data: clients }, { data: quotes }, invoiceNumber, { data: signed }] = await Promise.all([
     supabase.from("clients").select("id, name, company").eq("user_id", user.id).order("name", { ascending: true }),
-    supabase
-      .from("quotes")
-      .select("id, title, client_id, project_name, scope, build_total, monthly_retainer")
-      .eq("user_id", user.id)
-      .order("title", { ascending: true }),
+    supabase.from("quotes").select("*").eq("user_id", user.id).order("title", { ascending: true }),
     getNextInvoiceNumber(),
     supabase.from("contracts").select("quote_id, snapshot").eq("user_id", user.id).eq("status", "signed"),
   ]);
@@ -54,7 +50,8 @@ export default async function NewInvoicePage({
   // but the amount is known, and the amount is computed by the form.
   const type = INVOICE_TYPES.find((t) => t === searchParams.invoice_type);
   const quote = searchParams.quote_id ? (quotes ?? []).find((q) => q.id === searchParams.quote_id) ?? null : null;
-  const prefilled = Boolean(type && type !== "custom" && quote);
+  const isChangeOrder = quote?.kind === "change_order";
+  const prefilled = Boolean(quote && type && (type !== "custom" || isChangeOrder));
   const issuedISO = todayISO();
   const dueISO = addDaysISO(issuedISO, 30);
 
@@ -68,7 +65,7 @@ export default async function NewInvoicePage({
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="mb-6">
         <Link href={backHref} className="text-sm font-medium text-gray-500 hover:text-brand-dark transition-colors">
           {backLabel}
@@ -83,7 +80,7 @@ export default async function NewInvoicePage({
           client_id: searchParams.client_id ?? quote?.client_id ?? null,
           quote_id: quote?.id ?? null,
           invoice_type: type ?? null,
-          title: prefilled && quote ? `${quote.project_name || quote.title} — ${TYPE_TITLE[type!]}` : null,
+          title: prefilled && quote ? (isChangeOrder ? quote.title : `${quote.project_name || quote.title} — ${TYPE_TITLE[type!]}`) : null,
           description: prefilled && quote ? quote.scope : null,
           issued_date: prefilled ? issuedISO : null,
           due_date: prefilled ? dueISO : null,

@@ -6,7 +6,9 @@ import ConfirmButton from "@/components/ui/ConfirmButton";
 import { StatusBadge } from "../../quotes/statusBadge";
 import { deleteInvoiceRecord, markInvoicePaid, markInvoiceSent } from "../actions";
 import { effectiveInvoiceStatus } from "../status";
-// import { createStripeCheckout } from "../stripeActions";
+import { sendInvoiceViaStripe } from "../stripeActions";
+import { stripeMode } from "@/lib/stripe";
+import CopyButton from "@/components/ui/CopyButton";
 import { fmtMoney } from "../../quotes/lineItems";
 
 function fmtDate(value: string | null) {
@@ -16,6 +18,11 @@ function fmtDate(value: string | null) {
     month: "long",
     day: "numeric",
   });
+}
+
+function fmtDateTime(value: string | null | undefined) {
+  if (!value) return "—";
+  return new Date(value).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 function InfoField({ label, value }: { label: string; value: React.ReactNode }) {
@@ -44,7 +51,13 @@ function SummaryRow({ label, value, emphasize }: { label: string; value: string;
   );
 }
 
-export default async function InvoiceDetailPage({ params, searchParams }: { params: { id: string }; searchParams: { from?: string; payment?: string } }) {
+export default async function InvoiceDetailPage({
+  params,
+  searchParams,
+}: {
+  params: { id: string };
+  searchParams: { from?: string; payment?: string; stripe?: string; stripe_error?: string; via?: string; note?: string; transport?: string };
+}) {
   const backHref = searchParams.from ?? "/dashboard/invoices";
   const backLabel = searchParams.from ? "← Back to Client" : "← Back to Invoices";
   const paymentStatus = searchParams.payment;
@@ -65,6 +78,10 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
 
 
   const status = effectiveInvoiceStatus(invoice);
+  const mode = stripeMode();
+  // Plain locals only inside the inline actions below — see clients/[id]/page.tsx.
+  const invoiceId: string = invoice.id;
+  const backTo = searchParams.from ? `/dashboard/invoices/${invoiceId}?from=${encodeURIComponent(searchParams.from)}` : undefined;
 
   async function handleDelete() {
     "use server";
@@ -81,9 +98,14 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
     await markInvoiceSent(invoice!.id);
   }
 
+  async function handleSendStripe() {
+    "use server";
+    await sendInvoiceViaStripe(invoiceId, backTo);
+  }
+
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       {paymentStatus === "success" && (
         <div className="mb-5 flex items-center gap-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl px-5 py-3.5 text-sm font-medium">
           <svg className="w-4 h-4 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
@@ -94,6 +116,20 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
         <div className="mb-5 flex items-center gap-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-5 py-3.5 text-sm font-medium">
           <svg className="w-4 h-4 text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
           Payment was cancelled — no charge was made.
+        </div>
+      )}
+      {searchParams.stripe && (
+        <div className={`mb-5 flex flex-wrap items-center gap-3 rounded-xl border px-5 py-3.5 text-sm font-medium ${searchParams.via === "stripe" ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}>
+          {searchParams.via === "stripe"
+            ? `${searchParams.stripe === "resent" ? "Re-sent" : "Sent"} using Stripe's own email.${searchParams.note ? ` Your invoice email could not go out: ${searchParams.note}` : ""}`
+            : `${searchParams.stripe === "resent" ? "Re-sent" : "Sent"} — your invoice went to the client by email with a Pay button that opens Stripe.${searchParams.transport ? ` Sent through ${searchParams.transport === "gmail" ? "Gmail" : "Resend"}.` : ""}`}
+          {mode === "test" && <span className="ml-auto rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">test mode</span>}
+        </div>
+      )}
+      {searchParams.stripe_error && (
+        <div className="mb-5 bg-red-50 border border-red-200 text-red-800 rounded-xl px-5 py-3.5 text-sm">
+          <span className="font-semibold">Stripe: </span>
+          {searchParams.stripe_error}
         </div>
       )}
       <div className="mb-6 flex items-start justify-between">
@@ -119,13 +155,27 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
           )}
         </div>
         <div className="flex items-center gap-3">
+          {mode && invoice.status !== "paid" && invoice.status !== "cancelled" && (
+            <form action={handleSendStripe}>
+              <button
+                type="submit"
+                className="whitespace-nowrap bg-brand-mid text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand-dark transition-colors"
+              >
+                {invoice.stripe_invoice_id ? "Re-send via Stripe" : "Send via Stripe"}
+              </button>
+            </form>
+          )}
           {invoice.status === "draft" && (
             <form action={handleMarkSent}>
               <button
                 type="submit"
-                className="bg-brand-mid text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand-dark transition-colors"
+                className={
+                  mode
+                    ? "whitespace-nowrap text-sm font-medium text-gray-500 hover:text-brand-dark transition-colors px-2 py-2"
+                    : "whitespace-nowrap bg-brand-mid text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand-dark transition-colors"
+                }
               >
-                Mark sent
+                {mode ? "Mark sent (sent another way)" : "Mark sent"}
               </button>
             </form>
           )}
@@ -150,6 +200,38 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
           </form>
         </div>
       </div>
+
+      {invoice.stripe_invoice_id && (
+        <div className="mb-6 max-w-4xl rounded-2xl border border-brand-light bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-brand-mid">
+                Stripe{mode === "test" ? " · test mode" : ""}
+              </p>
+              <p className="mt-1 text-sm text-brand-dark">
+                Sent {fmtDateTime(invoice.stripe_sent_at)} · Stripe says{" "}
+                <span className="font-semibold capitalize">{String(invoice.stripe_status ?? "open").replace("_", " ")}</span>
+                {invoice.paid_via === "stripe" && " · paid online"}
+              </p>
+            </div>
+            {invoice.stripe_hosted_url && (
+              <div className="flex items-center gap-3">
+                <a
+                  href={invoice.stripe_hosted_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-lg border border-brand-light bg-white px-3 py-1.5 text-xs font-semibold text-brand-dark transition-colors hover:bg-brand-cream"
+                >
+                  Open hosted invoice
+                </a>
+                <span className="[&>button]:mt-0">
+                  <CopyButton text={invoice.stripe_hosted_url} label="Copy pay link" />
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Document */}
       <div className="bg-white rounded-xl shadow-[0_4px_32px_rgba(0,0,0,0.10),0_1px_4px_rgba(0,0,0,0.06)] overflow-hidden max-w-4xl">
@@ -250,11 +332,21 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
         {invoice.status !== "paid" && (
           <div className="mx-8 mb-6 bg-brand-cream border border-brand-light rounded-xl px-6 py-4">
             <p className="text-xs font-semibold text-brand-dark uppercase tracking-wide mb-1.5">How to Pay</p>
-            <p className="text-sm text-gray-600 leading-relaxed">
-              To pay this invoice, please contact{" "}
-              <span className="font-semibold text-brand-dark">Rooted Tech Solutions</span>{" "}
-              and we will provide you with our account details for ACH payment.
-            </p>
+            {invoice.stripe_hosted_url ? (
+              <p className="text-sm text-gray-600 leading-relaxed">
+                Pay online by card or bank transfer at{" "}
+                <a href={invoice.stripe_hosted_url} className="font-semibold text-brand-mid underline-offset-2 hover:underline break-all">
+                  {invoice.stripe_hosted_url}
+                </a>
+                . A receipt is emailed automatically.
+              </p>
+            ) : (
+              <p className="text-sm text-gray-600 leading-relaxed">
+                To pay this invoice, please contact{" "}
+                <span className="font-semibold text-brand-dark">Rooted Tech Solutions</span>{" "}
+                and we will provide you with our account details for ACH payment.
+              </p>
+            )}
             <div className="mt-2.5 flex items-center gap-3 text-sm text-brand-mid font-medium">
               <span className="text-brand-dark">Gabe Reyes</span>
               <span className="text-gray-400">–</span>

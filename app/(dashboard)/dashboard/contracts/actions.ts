@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { logEvent } from "@/lib/events";
 import { buildContractSnapshot } from "./contractTerms";
 import { updateWithOptional } from "@/lib/supabase/updateWithOptional";
 
@@ -62,6 +63,7 @@ export async function generateContractFromQuote(quoteId: string) {
     .single();
 
   if (error || !contract) return { error: error?.message ?? "Could not create contract" };
+  await logEvent(supabase, { userId: user.id, clientId: quote.client_id, kind: "contract_generated", summary: "Service agreement generated from the quote", refType: "contract", refId: contract.id });
 
   revalidatePath("/dashboard/contracts");
   revalidatePath("/dashboard/clients");
@@ -145,6 +147,8 @@ export async function sendPackage(contractId: string) {
       }
     }
   }
+
+  await logEvent(supabase, { userId: user.id, clientId: contract.client_id, kind: "package_sent", summary: "Package sent — quote, scope of work and agreement, one signing link", refType: "contract", refId: contract.id });
 
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/contracts");

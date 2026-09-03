@@ -34,7 +34,7 @@ export default async function EditSowPage({
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="mb-6">
         <Link href={backHref} className="text-sm font-medium text-gray-500 hover:text-brand-dark transition-colors">
           {backLabel}

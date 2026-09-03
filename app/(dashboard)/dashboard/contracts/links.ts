@@ -22,3 +22,12 @@ export function appOrigin(): string {
 export function signLinkFor(token: string): string {
   return `${appOrigin()}/sign/${token}`;
 }
+
+/**
+ * Origin for links and images inside emails. Never the request host: in
+ * development that is localhost, which no mail client can reach, so a logo
+ * would render broken. NEXT_PUBLIC_APP_URL if set, else the live site.
+ */
+export function publicOrigin(): string {
+  return (process.env.NEXT_PUBLIC_APP_URL ?? SITE.domain).replace(/\/$/, "");
+}

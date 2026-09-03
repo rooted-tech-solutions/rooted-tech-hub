@@ -4,17 +4,23 @@ import { createClient } from "@/lib/supabase/server";
 import ConfirmButton from "@/components/ui/ConfirmButton";
 import CopyButton from "@/components/ui/CopyButton";
 import {
+  addCareHoursFromForm,
   clearClientStageFromForm,
+  deleteCareHoursFromForm,
   deleteClientRecord,
   updateClientNotesFromForm,
   updateClientStageFromForm,
 } from "../actions";
+import type { ContractSnapshot } from "../../contracts/contractTerms";
+import { todayISO } from "@/lib/dates";
 import { StatusBadge } from "../../quotes/statusBadge";
 import { annualValue, fmtMoney, renewalLabel } from "../../quotes/lineItems";
 import { computeLifecycle, LIFECYCLE_STEPS, STAGE_ORDER } from "../lifecycle";
 import { computeNextStep, daysUntil } from "../nextStep";
 import { deleteQuoteRecord, updateQuoteStatus } from "../../quotes/actions";
 import { deleteInvoiceRecord, markInvoicePaid, markInvoiceSent } from "../../invoices/actions";
+import { sendInvoiceViaStripe } from "../../invoices/stripeActions";
+import { stripeMode } from "@/lib/stripe";
 import { effectiveInvoiceStatus } from "../../invoices/status";
 import { deleteContractRecord, generateContractFromQuote, sendPackage } from "../../contracts/actions";
 import { signLinkFor } from "../../contracts/links";
@@ -41,11 +47,13 @@ type QuoteRow = {
   monthly_retainer: number | null;
   issued_date: string | null;
   project_name: string | null;
-  // Present once migration 009 has run; the query uses select("*") so their
-  // absence is harmless.
+  // Present once migrations 009/010 have run; the query uses select("*") so
+  // their absence is harmless.
   sent_at?: string | null;
   accepted_at?: string | null;
   declined_at?: string | null;
+  kind?: string | null;
+  contract_id?: string | null;
 };
 type SowRow = {
   id: string;
@@ -66,6 +74,17 @@ type ContractRow = {
   signed_name: string | null;
   sign_token: string;
   quotes: { id: string; title: string } | null;
+  // Migration 010
+  first_opened_at?: string | null;
+  last_opened_at?: string | null;
+};
+type CareRow = { id: string; month: string; hours: number; note: string | null; created_at: string };
+type EventRow = {
+  id: string;
+  kind: string;
+  summary: string;
+  actor: "you" | "client" | "system";
+  created_at: string;
 };
 type InvoiceRow = {
   id: string;
@@ -76,6 +95,10 @@ type InvoiceRow = {
   amount: number | null;
   issued_date: string | null;
   due_date: string | null;
+  // Present once migration 010 has run (the query uses select("*")).
+  stripe_invoice_id?: string | null;
+  stripe_hosted_url?: string | null;
+  stripe_status?: string | null;
 };
 
 const INVOICE_TYPE_LABEL: Record<string, string> = {
@@ -152,7 +175,13 @@ function Step({
   );
 }
 
-export default async function ClientDetailPage({ params }: { params: { id: string } }) {
+export default async function ClientDetailPage({
+  params,
+  searchParams,
+}: {
+  params: { id: string };
+  searchParams: { stripe?: string; stripe_error?: string; via?: string; note?: string; transport?: string };
+}) {
   const supabase = createClient();
   const {
     data: { user },
@@ -171,20 +200,42 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
     supabase.from("quotes").select("*").eq("user_id", user.id).eq("client_id", client.id).order("created_at", { ascending: false }),
     supabase
       .from("invoices")
-      .select("id, invoice_number, title, status, invoice_type, amount, issued_date, due_date")
+      .select("*")
       .eq("user_id", user.id)
       .eq("client_id", client.id)
       .order("created_at", { ascending: false }),
     supabase
       .from("contracts")
-      .select("id, status, quote_id, sent_at, signed_at, signed_name, sign_token, quotes(id, title)")
+      .select("*, quotes(id, title)")
       .eq("user_id", user.id)
       .eq("client_id", client.id)
       .order("created_at", { ascending: false }) as unknown as Promise<{ data: ContractRow[] | null }>,
     supabase.from("scope_of_work").select("*").eq("user_id", user.id).eq("client_id", client.id).order("created_at", { ascending: false }),
   ]);
+  // The timeline (migration 010). A missing table just means an empty list.
+  const { data: eventsRaw } = await supabase
+    .from("events")
+    .select("id, kind, summary, actor, created_at")
+    .eq("user_id", user.id)
+    .eq("client_id", client.id)
+    .order("created_at", { ascending: false })
+    .limit(40);
+  const events = (eventsRaw ?? []) as EventRow[];
+  // Care plan hours (migration 010) — only meaningful once an agreement exists.
+  const { data: careRaw } = await supabase
+    .from("care_hours")
+    .select("id, month, hours, note, created_at")
+    .eq("user_id", user.id)
+    .eq("client_id", client.id)
+    .order("month", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(60);
+  const careEntries = (careRaw ?? []) as CareRow[];
 
   const quotes = (quotesRaw ?? []) as QuoteRow[];
+  // Proposals drive the pipeline. Change orders hang off a signed agreement.
+  const proposals = quotes.filter((q) => (q.kind ?? "proposal") !== "change_order");
+  const changeOrders = quotes.filter((q) => q.kind === "change_order");
   const invoices = (invoicesRaw ?? []) as InvoiceRow[];
   const contracts = contractsRes.data ?? [];
   const sows = (sowsRaw ?? []) as SowRow[];
@@ -196,8 +247,8 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
   const hasDocuments = quotes.length + invoices.length + contracts.length + sows.length > 0;
 
   const lifecycle = computeLifecycle({
-    hasQuote: quotes.some((q) => q.status === "sent" || q.status === "accepted"),
-    latestQuoteStatus: quotes[0]?.status ?? null,
+    hasQuote: proposals.some((q) => q.status === "sent" || q.status === "accepted"),
+    latestQuoteStatus: proposals[0]?.status ?? null,
     contract: contracts[0] ?? null,
     invoices: invoices.map((i) => ({ invoice_type: i.invoice_type, status: i.status })),
     renewalDate: client.renewal_date,
@@ -206,12 +257,20 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
   const currentOrder = STAGE_ORDER[lifecycle.stage];
 
   const next = computeNextStep(
-    { clientId: client.id, notes: client.notes, renewalDate: client.renewal_date, stage: lifecycle.stage, sows, quotes, contracts, invoices },
+    { clientId: client.id, notes: client.notes, renewalDate: client.renewal_date, stage: lifecycle.stage, sows, quotes: proposals, contracts, invoices },
     here,
   );
 
   const contract = contracts[0] ?? null;
-  const packageQuoteId = contract?.quote_id ?? quotes[0]?.id ?? null;
+  const packageQuoteId = contract?.quote_id ?? proposals[0]?.id ?? null;
+
+  // Care plan: the agreement's monthly allocation vs. what has been logged this month.
+  const snapshot = (contract as unknown as { snapshot?: Partial<ContractSnapshot> } | null)?.snapshot;
+  const allocatedHours = Number(snapshot?.monthly_hours ?? 0);
+  const thisMonth = todayISO().slice(0, 7);
+  const usedThisMonth = careEntries.filter((e) => e.month.startsWith(thisMonth)).reduce((s, e) => s + Number(e.hours), 0);
+  const overAllocation = allocatedHours > 0 && usedThisMonth > allocatedHours;
+  const monthLabel = (ym: string) => new Date(ym.slice(0, 7) + "-01T00:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" });
   const signLink = contract ? signLinkFor(contract.sign_token) : null;
   const firstName = String(client.name ?? "").split(/\s+/)[0] || "there";
   const mailto =
@@ -234,6 +293,8 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
   // encrypted bound arguments and evaluates it at render time — so touching a
   // nullable object inside one of these throws before the page can render.
   const clientId: string = client.id;
+  const clientEmail: string | null = client.email ?? null;
+  const mode = stripeMode();
   const nextAction = next.action;
   const contractId: string | null = contract?.id ?? null;
 
@@ -258,7 +319,7 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
     "inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-brand-dark shadow-sm transition-colors hover:bg-brand-cream";
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <Link href="/dashboard/clients" className="text-sm font-medium text-gray-500 transition-colors hover:text-brand-dark">
         ← Back to Clients
       </Link>
@@ -309,12 +370,27 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
           <span className="font-medium text-gray-400">Renewal</span> {fmtDay(client.renewal_date) ?? "—"}
           {client.renewal_date && <span className="text-gray-400"> · {renewalLabel(client.renewal_date).text.toLowerCase()}</span>}
         </span>
-        {quotes[0] && quotes[0].status !== "declined" && (
+        {proposals[0] && proposals[0].status !== "declined" && (
           <span>
-            <span className="font-medium text-gray-400">Quoted value</span> {fmtMoney(contractTotal(quotes[0]))}
+            <span className="font-medium text-gray-400">Quoted value</span> {fmtMoney(contractTotal(proposals[0]))}
           </span>
         )}
       </p>
+
+      {searchParams.stripe && (
+        <div className={`mt-4 flex flex-wrap items-center gap-3 rounded-xl border px-5 py-3 text-sm font-medium ${searchParams.via === "stripe" ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}>
+          {searchParams.via === "stripe"
+            ? `Invoice ${searchParams.stripe === "resent" ? "re-sent" : "sent"} using Stripe's own email.${searchParams.note ? ` Yours could not go out: ${searchParams.note}` : ""}`
+            : `Invoice ${searchParams.stripe === "resent" ? "re-sent" : "sent"} — the client got your invoice by email with a Pay button that opens Stripe.${searchParams.transport ? ` Sent through ${searchParams.transport === "gmail" ? "Gmail" : "Resend"}.` : ""}`}
+          {mode === "test" && <span className="ml-auto rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">test mode</span>}
+        </div>
+      )}
+      {searchParams.stripe_error && (
+        <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-5 py-3 text-sm text-red-800">
+          <span className="font-semibold">Stripe: </span>
+          {searchParams.stripe_error}
+        </div>
+      )}
 
       {/* ── Lifecycle ──────────────────────────────────────────────────── */}
       <div className="mt-6 rounded-2xl border border-brand-light bg-white px-6 py-5 shadow-sm">
@@ -367,7 +443,7 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
           </div>
         </div>
 
-        <div className="flex items-center gap-0">
+        <div className="flex items-center gap-0 overflow-x-auto pb-1 [&>div]:min-w-[5.5rem]">
           {LIFECYCLE_STEPS.map((step, idx) => {
             const order = STAGE_ORDER[step.stage as keyof typeof STAGE_ORDER];
             const done = currentOrder > order;
@@ -575,18 +651,18 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
           n={3}
           title="Quote"
           current={next.section === 3}
-          summary={quotes[0] && <StatusBadge status={quotes[0].status} />}
+          summary={proposals[0] && <StatusBadge status={proposals[0].status} />}
           actions={
-            <Link href={`/dashboard/quotes/new?client_id=${client.id}&from=${back}`} className={quotes.length === 0 ? headerButton : headerLink}>
+            <Link href={`/dashboard/quotes/new?client_id=${client.id}&from=${back}`} className={proposals.length === 0 ? headerButton : headerLink}>
               + Quote
             </Link>
           }
         >
-          {quotes.length === 0 ? (
+          {proposals.length === 0 ? (
             <p className="text-sm text-gray-400">One price for the build plus the monthly care plan.</p>
           ) : (
             <ul className="divide-y divide-brand-light">
-              {quotes.map((quote) => {
+              {proposals.map((quote) => {
                 const hasContract = contracts.some((c) => c.quote_id === quote.id);
                 async function handleDelete() {
                   "use server";
@@ -675,7 +751,7 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
                       {c.signed_name ? (
                         <p className="mt-0.5 text-[11px] text-brand-mid">Signed by {c.signed_name} · {fmtDay(c.signed_at)}</p>
                       ) : (
-                        <Stamps items={[["Sent", c.sent_at]]} />
+                        <Stamps items={[["Sent", c.sent_at], ["Client opened", c.first_opened_at], ["Last opened", c.last_opened_at !== c.first_opened_at ? c.last_opened_at : null]]} />
                       )}
                     </div>
                     <div className="flex items-center gap-3">
@@ -689,6 +765,81 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
                 );
               })}
             </ul>
+          )}
+
+          {contract?.status === "signed" && (
+            <div className="mt-5 border-t border-brand-light pt-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-brand-dark">Change orders</p>
+                  <p className="text-[11px] text-gray-400">Work outside the agreement — priced, accepted, and billed separately.</p>
+                </div>
+                <Link
+                  href={`/dashboard/quotes/new?client_id=${client.id}&from=${back}&kind=change_order&contract_id=${contract.id}`}
+                  className={headerLink}
+                >
+                  + Change order
+                </Link>
+              </div>
+              {changeOrders.length > 0 && (
+                <ul className="mt-3 divide-y divide-brand-light">
+                  {changeOrders.map((co) => {
+                    async function handleDelete() {
+                      "use server";
+                      await deleteQuoteRecord(co.id, here);
+                    }
+                    async function handleStatus(formData: FormData) {
+                      "use server";
+                      await updateQuoteStatus(co.id, String(formData.get("status") ?? ""), clientId);
+                    }
+                    return (
+                      <li key={co.id} className="flex flex-wrap items-center justify-between gap-3 py-2.5">
+                        <div className="min-w-0">
+                          <Link href={`/dashboard/quotes/${co.id}?from=${back}`} className="group block">
+                            <p className="text-sm font-medium text-brand-dark transition-colors group-hover:text-brand-mid">{co.title}</p>
+                          </Link>
+                          <p className="mt-0.5 text-[11px] text-gray-400">{fmtMoney(co.build_total)}</p>
+                          <Stamps items={[["Sent", co.sent_at], ["Accepted", co.accepted_at], ["Declined", co.declined_at]]} />
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <StatusBadge status={co.status} />
+                          {co.status === "draft" && (
+                            <form action={handleStatus}>
+                              <input type="hidden" name="status" value="sent" />
+                              <button type="submit" className={rowAction}>Mark sent</button>
+                            </form>
+                          )}
+                          {co.status === "sent" && (
+                            <>
+                              <form action={handleStatus}>
+                                <input type="hidden" name="status" value="accepted" />
+                                <button type="submit" className={rowAction}>Accepted</button>
+                              </form>
+                              <form action={handleStatus}>
+                                <input type="hidden" name="status" value="declined" />
+                                <button type="submit" className={rowAction}>Declined</button>
+                              </form>
+                            </>
+                          )}
+                          {co.status === "accepted" && (
+                            <Link
+                              href={`/dashboard/invoices/new?client_id=${client.id}&from=${back}&invoice_type=custom&quote_id=${co.id}`}
+                              className={rowPrimary}
+                            >
+                              Invoice it
+                            </Link>
+                          )}
+                          <Link href={`/dashboard/quotes/${co.id}/edit?from=${back}`} className={rowAction}>Edit</Link>
+                          <form action={handleDelete}>
+                            <ConfirmButton label="Delete" confirmLabel="Delete?" {...rowDelete} disabled={co.status === "accepted"} disabledReason="An accepted change order stays on record." />
+                          </form>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
           )}
         </Step>
 
@@ -712,7 +863,7 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
             <ul className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
               {[
                 ["Scope of work", sows.length > 0],
-                ["Quote", quotes.length > 0],
+                ["Quote", proposals.length > 0],
                 ["Agreement", contracts.length > 0],
               ].map(([name, ok]) => (
                 <li key={String(name)} className={`flex items-center gap-1.5 ${ok ? "text-brand-dark" : "text-gray-400"}`}>
@@ -726,11 +877,11 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
 
             {!contract && <p className="text-sm text-gray-400">Generate the agreement to complete the package.</p>}
 
-            {contract?.status === "draft" && quotes[0]?.status === "declined" && (
+            {contract?.status === "draft" && proposals[0]?.status === "declined" && (
               <p className="text-sm font-medium text-red-700">The quote was declined — revise it and generate a fresh agreement before sending.</p>
             )}
 
-            {contract?.status === "draft" && quotes[0]?.status !== "declined" && (
+            {contract?.status === "draft" && proposals[0]?.status !== "declined" && (
               <form action={handleSendPackage}>
                 <button type="submit" className={headerButton}>
                   Send the package
@@ -749,7 +900,11 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
                   <p className="mt-0.5 text-xs text-gray-500">
                     {contract.status === "signed"
                       ? `${contract.signed_name} signed on ${fmtDay(contract.signed_at)}.`
-                      : `Sent ${fmtDay(contract.sent_at) ?? "—"}. The client reviews all three documents and signs at this link.`}
+                      : `Sent ${fmtDay(contract.sent_at) ?? "—"}. ${
+                          contract.first_opened_at
+                            ? `Opened by the client ${fmtDay(contract.last_opened_at ?? contract.first_opened_at)}.`
+                            : "Not opened yet."
+                        } They review all three documents and sign at this link.`}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -813,6 +968,10 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
                   "use server";
                   await markInvoiceSent(inv.id, clientId);
                 }
+                async function handleStripe() {
+                  "use server";
+                  await sendInvoiceViaStripe(inv.id, here);
+                }
                 async function handleDelete() {
                   "use server";
                   await deleteInvoiceRecord(inv.id, here);
@@ -834,9 +993,19 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
                     </div>
                     <div className="flex items-center gap-3">
                       <StatusBadge status={status} />
+                      {inv.stripe_hosted_url && (
+                        <span className="[&>button]:mt-0">
+                          <CopyButton text={inv.stripe_hosted_url} label="Pay link" />
+                        </span>
+                      )}
+                      {mode && clientEmail && inv.status !== "paid" && inv.status !== "cancelled" && (
+                        <form action={handleStripe}>
+                          <button type="submit" className={rowPrimary}>{inv.stripe_invoice_id ? "Re-send" : "Send via Stripe"}</button>
+                        </form>
+                      )}
                       {inv.status === "draft" && (
                         <form action={handleMarkSent}>
-                          <button type="submit" className={rowPrimary}>Mark sent</button>
+                          <button type="submit" className={mode ? rowAction : rowPrimary}>{mode ? "Mark sent" : "Mark sent"}</button>
                         </form>
                       )}
                       {inv.status !== "paid" && inv.status !== "cancelled" && inv.status !== "draft" && (
@@ -855,6 +1024,113 @@ export default async function ClientDetailPage({ params }: { params: { id: strin
             </ul>
           )}
         </Step>
+
+        {/* 7 · Care plan — the fifth public step, "It keeps working" */}
+        {contract?.status === "signed" && (
+          <Step
+            n={7}
+            title="Care plan"
+            current={false}
+            summary={
+              <span className="text-[11px] text-gray-400">
+                {allocatedHours > 0 ? `${allocatedHours} hours a month in the agreement` : "No monthly hours in the agreement"}
+              </span>
+            }
+          >
+            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_16rem]">
+              <div>
+                <div className="flex items-baseline justify-between gap-4">
+                  <p className="text-sm font-semibold text-brand-dark">{monthLabel(thisMonth)}</p>
+                  <p className={`text-sm ${overAllocation ? "font-semibold text-red-700" : "text-brand-dark"}`}>
+                    {usedThisMonth} of {allocatedHours} h used
+                  </p>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-100">
+                  <div
+                    className={`h-2 rounded-full ${overAllocation ? "bg-red-500" : "bg-brand-mid"}`}
+                    style={{ width: `${allocatedHours > 0 ? Math.min(100, (usedThisMonth / allocatedHours) * 100) : 0}%` }}
+                  />
+                </div>
+                {overAllocation && (
+                  <p className="mt-1.5 text-xs text-red-700">
+                    Over the monthly allocation. The agreement says extra work is quoted separately — a change order, not a favour.
+                  </p>
+                )}
+
+                {careEntries.length === 0 ? (
+                  <p className="mt-4 text-sm text-gray-400">Nothing logged yet.</p>
+                ) : (
+                  <ul className="mt-4 divide-y divide-brand-light">
+                    {careEntries.map((e) => (
+                      <li key={e.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                        <div className="min-w-0">
+                          <span className="font-medium text-brand-dark">{Number(e.hours)} h</span>
+                          <span className="ml-2 text-gray-400">{monthLabel(e.month)}</span>
+                          {e.note && <span className="ml-2 text-gray-600">· {e.note}</span>}
+                        </div>
+                        <form action={deleteCareHoursFromForm}>
+                          <input type="hidden" name="id" value={e.id} />
+                          <input type="hidden" name="client_id" value={clientId} />
+                          <ConfirmButton label="Delete" confirmLabel="Delete?" {...rowDelete} />
+                        </form>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <form action={addCareHoursFromForm} className="space-y-2.5 rounded-xl border border-brand-light bg-brand-cream/50 p-4">
+                <input type="hidden" name="client_id" value={clientId} />
+                <p className="text-xs font-semibold uppercase tracking-wide text-brand-dark">Log hours</p>
+                <label className="block text-[11px] font-medium text-gray-500">
+                  Month
+                  <input type="month" name="month" defaultValue={thisMonth} className="mt-1 w-full rounded-lg border border-brand-light bg-white px-2.5 py-1.5 text-sm text-brand-dark" />
+                </label>
+                <label className="block text-[11px] font-medium text-gray-500">
+                  Hours
+                  <input type="number" name="hours" step="0.25" min="0.25" required placeholder="1.5" className="mt-1 w-full rounded-lg border border-brand-light bg-white px-2.5 py-1.5 text-sm text-brand-dark" />
+                </label>
+                <label className="block text-[11px] font-medium text-gray-500">
+                  What for
+                  <input name="note" placeholder="Fixed the invoice export" className="mt-1 w-full rounded-lg border border-brand-light bg-white px-2.5 py-1.5 text-sm text-brand-dark" />
+                </label>
+                <button type="submit" className={`${headerButton} w-full justify-center`}>
+                  Log hours
+                </button>
+              </form>
+            </div>
+          </Step>
+        )}
+      </div>
+
+      {/* ── Activity ───────────────────────────────────────────────────── */}
+      <div className="mt-10 max-w-4xl">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-brand-dark">Activity</h2>
+          <p className="text-[11px] text-gray-400">Everything that happened with this client, newest first</p>
+        </div>
+        {events.length === 0 ? (
+          <div className="rounded-2xl border border-brand-light bg-white p-6 text-center shadow-sm">
+            <p className="text-sm text-gray-400">Nothing recorded yet. Actions from here on are logged automatically.</p>
+          </div>
+        ) : (
+          <ol className="relative divide-y divide-brand-light rounded-2xl border border-brand-light bg-white shadow-sm">
+            {events.map((ev) => (
+              <li key={ev.id} className="flex items-start gap-3 px-5 py-3">
+                <span
+                  className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${
+                    ev.actor === "client" ? "bg-brand-mid" : ev.actor === "system" ? "bg-gray-300" : "bg-brand-dark"
+                  }`}
+                  title={ev.actor === "client" ? "The client" : ev.actor === "system" ? "Automatic" : "You"}
+                />
+                <p className="min-w-0 flex-1 text-sm text-brand-dark">{ev.summary}</p>
+                <time className="flex-shrink-0 text-[11px] text-gray-400" dateTime={ev.created_at}>
+                  {new Date(ev.created_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                </time>
+              </li>
+            ))}
+          </ol>
+        )}
       </div>
     </div>
   );

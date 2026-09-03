@@ -33,7 +33,7 @@ export default async function DashboardLayout({
   return (
     <div className="flex min-h-screen bg-brand-cream">
       <Sidebar unreadCount={count ?? 0} />
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-auto pb-20 md:pb-0">
         {children}
       </main>
     </div>

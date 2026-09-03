@@ -1,15 +1,12 @@
-import { Resend } from "resend";
 import { SITE } from "@/lib/site";
+import { sendMail } from "@/lib/mailer";
 
 /**
- * Outbound email.
- *
- * Only configured when RESEND_API_KEY is present, so the app runs locally
- * without it. Resend's free tier will only deliver to the account owner's own
- * address until a domain is DNS-verified — since the inquiry alert goes to the
- * owner, that works from day one, before the domain exists.
+ * The emails the Hub sends. Content lives here; how it gets delivered lives
+ * in lib/mailer.ts. Every function is best-effort: the database row the
+ * caller already wrote is the source of truth, and a mail failure must never
+ * fail the action that triggered it.
  */
-const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
 export type InquiryAlert = {
   name: string;
@@ -21,18 +18,9 @@ export type InquiryAlert = {
   message?: string | null;
 };
 
-/**
- * Announce a new website inquiry.
- *
- * Best-effort by design. The database row written by submit_inquiry is the
- * source of truth; if this fails the lead is still sitting in the Hub inbox.
- * Never throw — a mail outage must not cost a lead.
- */
+/** Announce a new website inquiry to the owner. */
 export async function sendInquiryAlert(inquiry: InquiryAlert): Promise<{ sent: boolean }> {
-  if (!resend) return { sent: false };
-
   const line = (label: string, value?: string | null) => (value ? `${label}: ${value}\n` : "");
-
   const text =
     `New inquiry from the website.\n\n` +
     line("Name", inquiry.name) +
@@ -44,18 +32,35 @@ export async function sendInquiryAlert(inquiry: InquiryAlert): Promise<{ sent: b
     (inquiry.message ? `\nMessage:\n${inquiry.message}\n` : "") +
     `\nOpen it in the Hub: ${SITE.domain}/dashboard/inbox\n`;
 
-  try {
-    await resend.emails.send({
-      from: SITE.mailFrom,
-      to: SITE.inquiryNotifyTo,
-      // Hitting reply answers the lead directly rather than the sender address.
-      replyTo: inquiry.email,
-      subject: `New inquiry — ${inquiry.name}${inquiry.company ? ` (${inquiry.company})` : ""}`,
-      text,
-    });
-    return { sent: true };
-  } catch (err) {
-    console.error("Inquiry alert email failed:", err);
-    return { sent: false };
-  }
+  const result = await sendMail({
+    to: SITE.inquiryNotifyTo,
+    // Hitting reply answers the lead directly.
+    replyTo: inquiry.email,
+    subject: `New inquiry — ${inquiry.name}${inquiry.company ? ` (${inquiry.company})` : ""}`,
+    text,
+  });
+  if (!result.sent) console.error("Inquiry alert email not sent:", result.reason);
+  return { sent: result.sent };
+}
+
+/** Tell the owner the moment a client signs. */
+export async function sendSignedAlert(input: { clientLabel: string; signedName: string; contractUrl: string }): Promise<{ sent: boolean }> {
+  const result = await sendMail({
+    to: SITE.inquiryNotifyTo,
+    subject: `Signed — ${input.clientLabel}`,
+    text:
+      `${input.signedName} just signed the service agreement for ${input.clientLabel}.\n\n` +
+      `Next step: the deposit invoice.\n${input.contractUrl}\n`,
+  });
+  if (!result.sent) console.error("Signed alert email not sent:", result.reason);
+  return { sent: result.sent };
+}
+
+/**
+ * The client's invoice, from us. Returns why it could not be sent so the
+ * caller can fall back to Stripe's own email and tell the owner what happened.
+ */
+export async function sendInvoiceEmail(input: { to: string; subject: string; html: string; text: string }): Promise<{ sent: boolean; via?: string; reason?: string }> {
+  const result = await sendMail({ to: input.to, replyTo: SITE.email, subject: input.subject, html: input.html, text: input.text });
+  return { sent: result.sent, via: result.via ?? undefined, reason: result.reason };
 }

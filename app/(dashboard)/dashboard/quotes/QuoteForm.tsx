@@ -23,6 +23,8 @@ type QuoteFormValues = {
   notes?: string | null;
   build_items?: LineItem[] | null;
   maintenance_items?: LineItem[] | null;
+  kind?: string | null;
+  contract_id?: string | null;
 };
 
 type FormState = { error?: string } | null;
@@ -83,6 +85,14 @@ export default function QuoteForm({
   return (
     <form action={formAction} className="bg-white rounded-xl border border-brand-light p-6 space-y-6 max-w-4xl">
       {from && <input type="hidden" name="from" value={from} />}
+      {values.kind && <input type="hidden" name="kind" value={values.kind} />}
+      {values.contract_id && <input type="hidden" name="contract_id" value={values.contract_id} />}
+      {values.kind === "change_order" && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <span className="font-semibold">Change order.</span> Work outside the signed agreement. Price it in the build items — it is billed
+          separately on acceptance, and the care plan is untouched.
+        </div>
+      )}
       {state?.error && (
         <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">
           {state.error}

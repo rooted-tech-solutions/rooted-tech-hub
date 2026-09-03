@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import PrintButton from "@/components/ui/PrintButton";
 import { annualValue, fmtMoney, quoteNumber } from "@/app/(dashboard)/dashboard/quotes/lineItems";
@@ -34,6 +35,14 @@ export default async function SignContractPage({ params }: { params: { token: st
   const supabase = createClient();
 
   const { data: rows } = await supabase.rpc("get_client_package_by_token", { p_token: params.token });
+
+  // Note that the client opened the link (migration 010). Best-effort: the
+  // page must render even if the function is not there yet.
+  const openedFrom = headers().get("x-forwarded-for")?.split(",")[0]?.trim() || headers().get("x-real-ip") || "unknown";
+  await supabase.rpc("record_package_opened", { p_token: params.token, p_ip: openedFrom }).then(
+    () => undefined,
+    () => undefined,
+  );
   const row = rows?.[0];
 
   if (!row) notFound();

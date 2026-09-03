@@ -15,11 +15,7 @@ export default async function EditInvoicePage({ params }: { params: { id: string
   const [{ data: invoice }, { data: clients }, { data: quotes }, { data: signed }] = await Promise.all([
     supabase.from("invoices").select("*").eq("id", params.id).eq("user_id", user.id).single(),
     supabase.from("clients").select("id, name, company").eq("user_id", user.id).order("name", { ascending: true }),
-    supabase
-      .from("quotes")
-      .select("id, title, client_id, project_name, scope, build_total, monthly_retainer")
-      .eq("user_id", user.id)
-      .order("title", { ascending: true }),
+    supabase.from("quotes").select("*").eq("user_id", user.id).order("title", { ascending: true }),
     supabase.from("contracts").select("quote_id, snapshot").eq("user_id", user.id).eq("status", "signed"),
   ]);
 
@@ -38,7 +34,7 @@ export default async function EditInvoicePage({ params }: { params: { id: string
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="mb-6">
         <Link
           href={`/dashboard/invoices/${invoice.id}`}

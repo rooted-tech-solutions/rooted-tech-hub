@@ -162,7 +162,7 @@ export default async function QuoteDetailPage({
     "whitespace-nowrap bg-brand-light text-brand-dark text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand-mid hover:text-white transition-colors";
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="mb-6 flex items-start justify-between print:hidden">
         <div>
           <Link
@@ -239,7 +239,9 @@ export default async function QuoteDetailPage({
             <Image src="/logo.png" alt="Rooted Tech Solutions" width={300} height={138} className="h-24 w-auto" priority />
           </div>
           <div className="text-right">
-            <p className="text-[20px] font-bold text-brand-brown uppercase tracking-wide mb-1.5">Cost Estimate</p>
+            <p className="text-[20px] font-bold text-brand-brown uppercase tracking-wide mb-1.5">
+              {quote.kind === "change_order" ? "Change Order" : "Cost Estimate"}
+            </p>
             <div className="flex flex-col gap-0.5 text-[11.5px] text-gray-500">
               <p>
                 <span className="font-medium">Quote #:</span>{" "}
@@ -302,8 +304,16 @@ export default async function QuoteDetailPage({
             />
           )}
 
-          {/* Grand totals */}
-          {(() => {
+          {/* Grand totals — a change order is one number, billed on acceptance */}
+          {quote.kind === "change_order" ? (
+            <div className="mt-7 max-w-2xl ml-auto">
+              <div className="flex items-center justify-between rounded-lg border border-brand-light bg-brand-dark/5 px-5 py-3">
+                <span className="text-sm font-bold uppercase tracking-wide text-brand-dark">Change Order Total</span>
+                <span className="text-xl font-bold text-brand-dark">{fmtMoney(quote.build_total)}</span>
+              </div>
+              <p className="mt-2 text-right text-[11px] text-gray-500">Billed separately from the original agreement, on acceptance.</p>
+            </div>
+          ) : (() => {
             const annual = annualValue(quote.monthly_retainer);
             const contractTotal = (quote.build_total ?? 0) + annual;
             const deposit = contractTotal / 2;
@@ -358,13 +368,19 @@ export default async function QuoteDetailPage({
           <div className="mt-7">
             <p className="text-xs font-semibold text-brand-dark uppercase tracking-wide mb-2">Payment Terms &amp; Notes</p>
             <ul className="space-y-1.5">
-              {[
+              {(quote.kind === "change_order"
+                ? [
+                    "This change order covers work outside the signed agreement and is billed separately, on acceptance.",
+                    "It does not change the care plan or the payment schedule already agreed.",
+                    "All prices are in USD.",
+                  ]
+                : [
                 `A 50% deposit of ${fmtMoney((((quote.build_total ?? 0) + annualValue(quote.monthly_retainer)) / 2))} is due upon contract signing to begin work.`,
                 `The remaining 50% of ${fmtMoney((((quote.build_total ?? 0) + annualValue(quote.monthly_retainer)) / 2))} is due upon final delivery and client acceptance.`,
                 `Annual maintenance renews at ${fmtMoney(annualValue(quote.monthly_retainer))}/year on the renewal date. Cancellation prior to renewal is prorated for unused months.`,
                 "Scope changes or additional features will be quoted separately via written change order.",
                 `This quote is valid for ${quote.valid_for || "30 days"} from the date issued. All prices are in USD.`,
-              ].map((note) => (
+              ]).map((note) => (
                 <li key={note} className="text-xs text-gray-500 flex gap-2">
                   <span className="text-brand-mid font-bold flex-shrink-0">•</span>
                   {note}

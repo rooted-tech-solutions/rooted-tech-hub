@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { logEvent } from "@/lib/events";
 import { updateWithOptional } from "@/lib/supabase/updateWithOptional";
 
 export type SowItem = { item: string };
@@ -75,12 +76,14 @@ export async function createSowRecord(formData: FormData) {
   const parsed = parseSowFields(formData);
   if ("error" in parsed) return { error: parsed.error };
 
-  const { error } = await supabase.from("scope_of_work").insert({
-    user_id: user.id,
-    ...parsed,
-  });
+  const { data: created, error } = await supabase
+    .from("scope_of_work")
+    .insert({ user_id: user.id, ...parsed })
+    .select("id")
+    .single();
 
   if (error) return { error: error.message };
+  await logEvent(supabase, { userId: user.id, clientId: parsed.client_id, kind: "sow_created", summary: `Scope of work ${parsed.sow_number} created`, refType: "scope", refId: created?.id ?? null });
 
   const from = formData.get("from");
   revalidatePath("/dashboard/scope");
@@ -145,6 +148,7 @@ export async function updateSowStatus(id: string, status: string, clientId?: str
   if (status === "sent") stamp.sent_at = now;
   if (status === "approved") stamp.approved_at = now;
   await updateWithOptional(supabase, "scope_of_work", { id, user_id: user.id }, { status }, stamp);
+  await logEvent(supabase, { userId: user.id, clientId: clientId ?? null, kind: "sow_status", summary: `Scope of work marked ${status}`, refType: "scope", refId: id });
 
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/scope");

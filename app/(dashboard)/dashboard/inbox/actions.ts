@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { logEvent } from "@/lib/events";
 
 /**
  * Inquiries carry no user_id — a public form has no auth.uid() to attribute a
@@ -105,6 +106,7 @@ export async function convertToClient(formData: FormData) {
     .from("inquiries")
     .update({ status: "converted", converted_client_id: created.id })
     .eq("id", id);
+  await logEvent(supabase, { userId: user.id, clientId: created.id, kind: "inquiry_converted", summary: "Converted from a website inquiry", refType: "client", refId: created.id });
 
   revalidatePath("/dashboard/inbox");
   revalidatePath("/dashboard/clients");

@@ -25,7 +25,7 @@ export default async function EditQuotePage({ params }: { params: { id: string }
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="mb-6">
         <Link
           href={`/dashboard/quotes/${quote.id}`}

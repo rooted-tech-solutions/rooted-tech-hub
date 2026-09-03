@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { addDaysISO, addYearsISO, todayISO } from "@/lib/dates";
+import { logEvent } from "@/lib/events";
+import { applyInvoicePaid } from "./paid";
+import { addDaysISO, todayISO } from "@/lib/dates";
 
 const STATUSES = ["draft", "sent", "paid", "overdue", "cancelled"] as const;
 const INVOICE_TYPES = ["deposit", "final_payment", "annual_renewal", "custom"] as const;
@@ -93,12 +95,14 @@ export async function createInvoiceRecord(formData: FormData) {
   const parsed = parseInvoiceFields(formData);
   if ("error" in parsed) return { error: parsed.error };
 
-  const { error } = await supabase.from("invoices").insert({
-    user_id: user.id,
-    ...parsed.values,
-  });
+  const { data: created, error } = await supabase
+    .from("invoices")
+    .insert({ user_id: user.id, ...parsed.values })
+    .select("id")
+    .single();
 
   if (error) return { error: error.message };
+  await logEvent(supabase, { userId: user.id, clientId: parsed.values.client_id, kind: "invoice_created", summary: `Invoice ${parsed.values.invoice_number} drafted — ${parsed.values.title}`, refType: "invoice", refId: created?.id ?? null });
 
   const from = formData.get("from");
   revalidatePath("/dashboard/invoices");
@@ -176,6 +180,14 @@ export async function markInvoiceSent(id: string, clientId?: string) {
   await supabase.from("invoices").update(patch).eq("id", id).eq("user_id", user.id).eq("status", "draft");
 
   const resolvedClientId = clientId ?? (invoice?.client_id as string | null | undefined);
+  await logEvent(supabase, {
+    userId: user.id,
+    clientId: resolvedClientId ?? null,
+    kind: "invoice_sent",
+    summary: "Invoice marked sent",
+    refType: "invoice",
+    refId: id,
+  });
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/invoices");
   revalidatePath(`/dashboard/invoices/${id}`);
@@ -190,44 +202,8 @@ export async function markInvoicePaid(id: string, clientId?: string) {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const today = todayISO();
-
-  // Fetch invoice type and client_id before updating
-  const { data: invoice } = await supabase
-    .from("invoices")
-    .select("invoice_type, client_id")
-    .eq("id", id)
-    .eq("user_id", user.id)
-    .single();
-
-  await supabase
-    .from("invoices")
-    .update({ status: "paid", paid_date: today })
-    .eq("id", id)
-    .eq("user_id", user.id);
-
-  // The final payment starts the care plan: it renews one year from today.
-  // A renewal payment extends it one year from the *existing* renewal date,
-  // so the anniversary holds whether the client pays early or late.
-  const resolvedClientId = clientId ?? (invoice?.client_id as string | null | undefined);
-  const invoiceType = (invoice as { invoice_type?: string | null } | null)?.invoice_type;
-  if (resolvedClientId && (invoiceType === "final_payment" || invoiceType === "annual_renewal")) {
-    let baseISO = today;
-    if (invoiceType === "annual_renewal") {
-      const { data: client } = await supabase
-        .from("clients")
-        .select("renewal_date")
-        .eq("id", resolvedClientId)
-        .eq("user_id", user.id)
-        .single();
-      if (client?.renewal_date) baseISO = client.renewal_date as string;
-    }
-    await supabase
-      .from("clients")
-      .update({ renewal_date: addYearsISO(baseISO, 1) })
-      .eq("id", resolvedClientId)
-      .eq("user_id", user.id);
-  }
+  const { clientId: resolved } = await applyInvoicePaid(supabase, user.id, id, { paidDate: todayISO(), via: "manual" });
+  const resolvedClientId = clientId ?? resolved;
 
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/invoices");

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { logEvent } from "@/lib/events";
 import { updateWithOptional } from "@/lib/supabase/updateWithOptional";
 
 const STATUSES = ["draft", "sent", "accepted", "declined", "expired"] as const;
@@ -49,6 +50,12 @@ function parseQuoteFields(formData: FormData) {
     return { error: "Invalid status" } as const;
   }
 
+  // Change orders (migration 010): a quote that modifies an existing agreement.
+  // Only sent by the change-order form; ordinary quotes leave the DB default.
+  const kind = fieldOrNull(formData, "kind");
+  if (kind && kind !== "proposal" && kind !== "change_order") return { error: "Invalid quote kind" } as const;
+  const extra = kind ? { kind, contract_id: fieldOrNull(formData, "contract_id") } : {};
+
   const build_items = parseLineItemsJson(formData, "build_items_json");
   const maintenance_items = parseLineItemsJson(formData, "maintenance_items_json");
   const build_total = sumLineItems(build_items);
@@ -72,6 +79,7 @@ function parseQuoteFields(formData: FormData) {
       build_total,
       monthly_retainer,
       amount: build_total,
+      ...extra,
     },
   } as const;
 }
@@ -86,12 +94,14 @@ export async function createQuoteRecord(formData: FormData) {
   const parsed = parseQuoteFields(formData);
   if ("error" in parsed) return { error: parsed.error };
 
-  const { error } = await supabase.from("quotes").insert({
-    user_id: user.id,
-    ...parsed.values,
-  });
+  const { data: created, error } = await supabase
+    .from("quotes")
+    .insert({ user_id: user.id, ...parsed.values })
+    .select("id")
+    .single();
 
   if (error) return { error: error.message };
+  await logEvent(supabase, { userId: user.id, clientId: parsed.values.client_id, kind: "quote_created", summary: `Quote “${parsed.values.title}” created`, refType: "quote", refId: created?.id ?? null });
 
   const from = formData.get("from");
   revalidatePath("/dashboard/quotes");
@@ -164,6 +174,7 @@ export async function updateQuoteStatus(id: string, status: string, clientId?: s
   if (status === "accepted") stamp.accepted_at = now;
   if (status === "declined") stamp.declined_at = now;
   await updateWithOptional(supabase, "quotes", { id, user_id: user.id }, { status }, stamp);
+  await logEvent(supabase, { userId: user.id, clientId: clientId ?? null, kind: "quote_status", summary: `Quote marked ${status}`, refType: "quote", refId: id });
 
   revalidatePath("/dashboard/quotes");
   revalidatePath(`/dashboard/quotes/${id}`);

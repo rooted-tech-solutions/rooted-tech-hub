@@ -3,7 +3,12 @@ import { createClient } from "@/lib/supabase/server";
 import QuoteForm from "../QuoteForm";
 import { createQuoteRecord } from "../actions";
 
-export default async function NewQuotePage({ searchParams }: { searchParams: { client_id?: string; from?: string } }) {
+export default async function NewQuotePage({
+  searchParams,
+}: {
+  searchParams: { client_id?: string; from?: string; kind?: string; contract_id?: string };
+}) {
+  const isChangeOrder = searchParams.kind === "change_order";
   const supabase = createClient();
   const {
     data: { user },
@@ -26,17 +31,20 @@ export default async function NewQuotePage({ searchParams }: { searchParams: { c
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <div className="mb-6">
         <Link href={backHref} className="text-sm font-medium text-gray-500 hover:text-brand-dark transition-colors">
           {backLabel}
         </Link>
-        <h1 className="text-2xl font-semibold text-brand-dark mt-2">New Quote</h1>
+        <h1 className="text-2xl font-semibold text-brand-dark mt-2">{isChangeOrder ? "New Change Order" : "New Quote"}</h1>
       </div>
 
       <QuoteForm
         action={action}
-        initialValues={searchParams.client_id ? { client_id: searchParams.client_id } : undefined}
+        initialValues={{
+          client_id: searchParams.client_id ?? null,
+          ...(isChangeOrder ? { kind: "change_order", contract_id: searchParams.contract_id ?? null } : {}),
+        }}
         clients={clients ?? []}
         submitLabel="Save Quote"
         cancelHref={backHref}

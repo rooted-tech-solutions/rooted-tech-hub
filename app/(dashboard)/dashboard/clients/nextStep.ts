@@ -1,7 +1,7 @@
 import { startOfToday } from "@/lib/dates";
 import { STAGE_ORDER, type LifecycleStage } from "./lifecycle";
 
-export type StepDoc = { id: string; status: string };
+export type StepDoc = { id: string; status: string; kind?: string | null };
 export type StepContract = StepDoc & {
   quote_id: string | null;
   sent_at: string | null;
@@ -72,7 +72,8 @@ export function computeNextStep(x: StepInputs, from: string): NextStep {
   const at = (section: NextStep["section"]) => `${page}#step-${section}`;
 
   const contract = x.contracts[0] ?? null;
-  const quote = x.quotes[0] ?? null;
+  // Change orders modify a signed agreement; they never drive the pipeline.
+  const quote = x.quotes.find((q) => (q.kind ?? "proposal") !== "change_order") ?? null;
   const sow = x.sows[0] ?? null;
   const quoteId = contract?.quote_id ?? quote?.id ?? null;
   const floor = STAGE_ORDER[x.stage];

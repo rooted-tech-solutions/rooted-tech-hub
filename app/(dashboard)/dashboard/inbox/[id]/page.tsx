@@ -64,7 +64,7 @@ export default async function InquiryDetailPage({
   const isConverted = Boolean(inquiry.converted_client_id);
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <Link
         href="/dashboard/inbox"
         className="text-sm font-medium text-brand-mid hover:text-brand-dark transition-colors"

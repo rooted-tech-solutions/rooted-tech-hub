@@ -24,7 +24,7 @@ type ClientRow = {
   notes: string | null;
   lifecycle_stage: string | null;
 };
-type QuoteRow = { id: string; client_id: string | null; status: string; amount: number | null };
+type QuoteRow = { id: string; client_id: string | null; status: string; amount: number | null; kind?: string | null };
 type InvoiceRow = {
   id: string;
   client_id: string | null;
@@ -46,6 +46,15 @@ type ContractRow = {
   clients: { id: string; name: string | null; company: string | null } | null;
 };
 type SowRow = { id: string; client_id: string | null; status: string };
+type EventRow = {
+  id: string;
+  client_id: string | null;
+  kind: string;
+  summary: string;
+  actor: "you" | "client" | "system";
+  created_at: string;
+  clients: { name: string | null; company: string | null } | null;
+};
 
 function StatCard({
   label,
@@ -137,7 +146,7 @@ export default async function DashboardPage() {
       .select("id, name, company, email, renewal_date, notes, lifecycle_stage")
       .eq("user_id", user.id)
       .order("name", { ascending: true }) as unknown as Promise<{ data: ClientRow[] | null }>,
-    supabase.from("quotes").select("id, client_id, status, amount").eq("user_id", user.id).order("created_at", { ascending: false }) as unknown as Promise<{ data: QuoteRow[] | null }>,
+    supabase.from("quotes").select("*").eq("user_id", user.id).order("created_at", { ascending: false }) as unknown as Promise<{ data: QuoteRow[] | null }>,
     supabase
       .from("invoices")
       .select("id, client_id, status, amount, due_date, title, invoice_type, clients(name, company)")
@@ -151,6 +160,14 @@ export default async function DashboardPage() {
     supabase.from("scope_of_work").select("id, client_id, status").eq("user_id", user.id).order("created_at", { ascending: false }) as unknown as Promise<{ data: SowRow[] | null }>,
     supabase.from("inquiries").select("id", { count: "exact", head: true }).eq("status", "new"),
   ]);
+  // Timeline (migration 010). Missing table → empty list, nothing else changes.
+  const { data: recentRaw } = await supabase
+    .from("events")
+    .select("id, client_id, kind, summary, actor, created_at, clients(name, company)")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(8);
+  const recent = (recentRaw ?? []) as unknown as EventRow[];
 
   const clients = clientsRes.data ?? [];
   const quotes = quotesRes.data ?? [];
@@ -162,7 +179,7 @@ export default async function DashboardPage() {
   // ── Up next: one line per client ──────────────────────────────────────────
   const forClient = <T extends { client_id: string | null }>(rows: T[], id: string) => rows.filter((r) => r.client_id === id);
   const todo = clients.map((client) => {
-    const cq = forClient(quotes, client.id);
+    const cq = forClient(quotes, client.id).filter((q) => (q.kind ?? "proposal") !== "change_order");
     const ci = forClient(invoices, client.id);
     const cc = forClient(contracts, client.id);
     const cs = forClient(sows, client.id);
@@ -205,7 +222,7 @@ export default async function DashboardPage() {
   const hasAttention = attentionCount > 0;
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       {/* Hero */}
       <div className="relative mb-7 overflow-hidden rounded-2xl bg-brand-dark px-8 py-7 text-white shadow-lg shadow-brand-dark/10">
         <div className="relative">
@@ -217,7 +234,7 @@ export default async function DashboardPage() {
               : `${yourMove.length} thing${yourMove.length === 1 ? "" : "s"} waiting on you · ${waiting.length} waiting on clients`}
           </p>
         </div>
-        <div className="relative mt-6 grid grid-cols-4 gap-3">
+        <div className="relative mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">
           {[
             { label: "Clients", value: clients.length },
             { label: "Your move", value: yourMove.length },
@@ -233,7 +250,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Money */}
-      <div className="mb-7 grid grid-cols-2 gap-4">
+      <div className="mb-7 grid gap-4 sm:grid-cols-2">
         <StatCard label="Total Revenue (Paid)" value={fmtMoney(totalRevenue)} sub="all time" accent="text-brand-mid" href="/dashboard/invoices" linkLabel="All invoices →" />
         <StatCard
           label="Outstanding"
@@ -245,9 +262,9 @@ export default async function DashboardPage() {
         />
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid gap-6 lg:grid-cols-3">
         {/* Up next */}
-        <div className="col-span-2 space-y-6">
+        <div className="space-y-6 lg:col-span-2">
           <div>
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-brand-dark">Your move</h2>
             {yourMove.length === 0 ? (
@@ -352,6 +369,31 @@ export default async function DashboardPage() {
               )}
             </div>
           </div>
+
+          {recent.length > 0 && (
+            <div>
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-brand-dark">Recent activity</h2>
+              <ol className="divide-y divide-brand-light overflow-hidden rounded-2xl border border-brand-light bg-white shadow-sm">
+                {recent.map((ev) => (
+                  <li key={ev.id} className="px-4 py-2.5">
+                    <p className="text-xs text-brand-dark">
+                      {ev.client_id && (
+                        <Link href={`/dashboard/clients/${ev.client_id}`} className="font-semibold hover:text-brand-mid">
+                          {ev.clients?.company || ev.clients?.name || "Client"}
+                        </Link>
+                      )}
+                      {ev.client_id && " · "}
+                      {ev.summary}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-gray-400">
+                      {new Date(ev.created_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                      {ev.actor === "client" && " · client"}
+                    </p>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
 
           <div>
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-brand-dark">Quick actions</h2>
