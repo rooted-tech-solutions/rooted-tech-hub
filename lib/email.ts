@@ -64,3 +64,13 @@ export async function sendInvoiceEmail(input: { to: string; subject: string; htm
   const result = await sendMail({ to: input.to, replyTo: SITE.email, subject: input.subject, html: input.html, text: input.text });
   return { sent: result.sent, via: result.via ?? undefined, reason: result.reason };
 }
+
+/**
+ * The client's proposal — quote, scope of work and agreement behind one
+ * signing link. Returns why it could not be sent so the owner can send the
+ * link another way.
+ */
+export async function sendPackageEmail(input: { to: string; subject: string; html: string; text: string }): Promise<{ sent: boolean; via?: string; reason?: string }> {
+  const result = await sendMail({ to: input.to, replyTo: SITE.email, subject: input.subject, html: input.html, text: input.text });
+  return { sent: result.sent, via: result.via ?? undefined, reason: result.reason };
+}

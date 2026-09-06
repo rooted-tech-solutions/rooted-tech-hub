@@ -208,7 +208,7 @@ export function computeNextStep(x: StepInputs, from: string): NextStep {
       section: 5,
       owner: "you",
       title: "Send the package",
-      detail: "Quote, scope of work and agreement go out together as one signing link.",
+      detail: "Quote, scope of work and agreement go to the client by email, behind one Review & sign button.",
       action: { kind: "send-package", label: "Send the package", contractId: contract.id },
       href: at(5),
     };

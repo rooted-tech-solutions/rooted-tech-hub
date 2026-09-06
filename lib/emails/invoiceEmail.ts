@@ -77,7 +77,7 @@ export function invoiceEmailHtml({ origin, payUrl, invoice, client }: InvoiceEma
     "All prices are in USD.",
   ];
 
-  return `<!doctype html><html><body style="margin:0;padding:24px 12px;background:#F7F4EE">
+  return `<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:24px 12px;background:#F7F4EE">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;box-shadow:0 4px 32px rgba(0,0,0,.08);overflow:hidden">
 

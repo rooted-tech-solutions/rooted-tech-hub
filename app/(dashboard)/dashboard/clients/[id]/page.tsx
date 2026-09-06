@@ -185,7 +185,7 @@ export default async function ClientDetailPage({
   searchParams,
 }: {
   params: { id: string };
-  searchParams: { stripe?: string; stripe_error?: string; via?: string; note?: string; transport?: string };
+  searchParams: { stripe?: string; stripe_error?: string; via?: string; note?: string; transport?: string; package?: string; emailed?: string; package_error?: string };
 }) {
   const supabase = createClient();
   const {
@@ -279,13 +279,6 @@ export default async function ClientDetailPage({
   const overAllocation = allocatedHours > 0 && usedThisMonth > allocatedHours;
   const monthLabel = (ym: string) => new Date(ym.slice(0, 7) + "-01T00:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" });
   const signLink = contract ? signLinkFor(contract.sign_token) : null;
-  const firstName = String(client.name ?? "").split(/\s+/)[0] || "there";
-  const mailto =
-    signLink && client.email
-      ? `mailto:${client.email}?subject=${encodeURIComponent("Your proposal from Rooted Tech Solutions")}&body=${encodeURIComponent(
-          `Hi ${firstName},\n\nHere is the proposal we discussed. The quote, scope of work and service agreement are together in one place, and you can review and sign online:\n\n${signLink}\n\nThe deposit invoice follows once it is signed. Reply here with any questions.\n\nRooted Tech Solutions`,
-        )}`
-      : null;
 
   const contractTotal = (q: QuoteRow) => (q.build_total ?? 0) + annualValue(q.monthly_retainer);
   const paidOf = (type: string) => invoices.some((i) => i.invoice_type === type && i.status === "paid");
@@ -317,13 +310,13 @@ export default async function ClientDetailPage({
     "use server";
     const a = nextAction;
     if (!a) return;
-    if (a.kind === "send-package") await sendPackage(a.contractId);
+    if (a.kind === "send-package") await sendPackage(a.contractId, here);
     else if (a.kind === "generate-contract") await generateContractFromQuote(a.quoteId);
     else if (a.kind === "mark-paid") await markInvoicePaid(a.invoiceId, clientId);
   }
   async function handleSendPackage() {
     "use server";
-    if (contractId) await sendPackage(contractId);
+    if (contractId) await sendPackage(contractId, here);
   }
   async function handleGenerateContract(formData: FormData) {
     "use server";
@@ -400,6 +393,16 @@ export default async function ClientDetailPage({
             : `Invoice ${searchParams.stripe === "resent" ? "re-sent" : "sent"} — the client got your invoice by email with a Pay button that opens Stripe.${searchParams.transport ? ` Sent through ${searchParams.transport === "gmail" ? "Gmail" : "Resend"}.` : ""}`}
           {mode === "test" && <span className="ml-auto rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">test mode</span>}
         </div>
+      )}
+      {searchParams.package && (
+        <div className={`mt-4 rounded-xl border px-5 py-3 text-sm font-medium ${searchParams.emailed === "1" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-900"}`}>
+          {searchParams.emailed === "1"
+            ? `Package ${searchParams.package === "resent" ? "re-sent" : "sent"} — ${clientEmail ?? "the client"} received the quote, scope of work and agreement with a Review & sign button.${searchParams.transport ? ` Sent through ${searchParams.transport === "gmail" ? "Gmail" : "Resend"}.` : ""}`
+            : `The package is live, but the email did not go out${searchParams.note ? ` — ${searchParams.note}` : ""}. Copy the signing link below and send it yourself.`}
+        </div>
+      )}
+      {searchParams.package_error && (
+        <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-5 py-3 text-sm text-red-800">{searchParams.package_error}</div>
       )}
       {searchParams.stripe_error && (
         <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-5 py-3 text-sm text-red-800">
@@ -555,10 +558,12 @@ export default async function ClientDetailPage({
                 <span className="[&>button]:mt-0 [&>button]:text-brand-light [&>button:hover]:text-white">
                   <CopyButton text={signLink} label="Copy" />
                 </span>
-                {mailto && (
-                  <a href={mailto} className="text-xs font-semibold text-white hover:underline">
-                    Email it
-                  </a>
+                {clientEmail && (
+                  <form action={handleSendPackage}>
+                    <button type="submit" className="text-xs font-semibold text-white hover:underline">
+                      Email it again
+                    </button>
+                  </form>
                 )}
               </div>
             )}
@@ -918,10 +923,15 @@ export default async function ClientDetailPage({
             )}
 
             {contract?.status === "draft" && proposals[0]?.status !== "declined" && (
-              <form action={handleSendPackage}>
+              <form action={handleSendPackage} className="flex flex-wrap items-center gap-3">
                 <button type="submit" className={headerButton}>
                   Send the package
                 </button>
+                <p className="text-xs text-gray-500">
+                  {clientEmail
+                    ? `Emails ${clientEmail} the quote, scope of work and agreement with one Review & sign button.`
+                    : "Activates the signing link. Add an email to the client and it goes to them automatically."}
+                </p>
               </form>
             )}
           </div>
@@ -948,10 +958,12 @@ export default async function ClientDetailPage({
                   <span className="[&>button]:mt-0">
                     <CopyButton text={signLink} label="Copy link" />
                   </span>
-                  {mailto ? (
-                    <a href={mailto} className={headerLink}>
-                      Email the link
-                    </a>
+                  {contract.status === "signed" ? null : clientEmail ? (
+                    <form action={handleSendPackage}>
+                      <button type="submit" className={headerLink}>
+                        Email the link again
+                      </button>
+                    </form>
                   ) : (
                     <span className="text-[11px] text-gray-400">Add an email to the client to send it from here.</span>
                   )}

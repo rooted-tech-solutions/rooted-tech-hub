@@ -5,7 +5,10 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { safeFrom } from "../backLink";
 import { logEvent } from "@/lib/events";
-import { buildContractSnapshot } from "./contractTerms";
+import { buildContractSnapshot, type ContractSnapshot } from "./contractTerms";
+import { publicOrigin } from "./links";
+import { sendPackageEmail } from "@/lib/email";
+import { packageEmailHtml, packageEmailSubject, packageEmailText, type PackageEmailInput } from "@/lib/emails/packageEmail";
 import { updateWithOptional } from "@/lib/supabase/updateWithOptional";
 
 export async function generateContractFromQuote(quoteId: string) {
@@ -109,24 +112,41 @@ export async function sendContract(id: string) {
  * signing RPC refuses anything else), the quote it was built from becomes
  * `sent`, and any draft scope for this client that is linked to that quote
  * (or to no quote at all) becomes `sent`. Already-advanced documents are
- * left alone, so sending twice is harmless.
+ * left alone, so sending twice is harmless — it simply emails the link again.
+ *
+ * Then the client is emailed the branded invitation with a "Review & sign"
+ * button. That part is best effort: the documents are live either way, and
+ * the page the owner lands on says whether the email went out and why not.
  */
-export async function sendPackage(contractId: string) {
+export async function sendPackage(contractId: string, from?: string) {
   const supabase = createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: contract } = await supabase
+  const { data: contract } = (await supabase
     .from("contracts")
-    .select("id, quote_id, client_id, status")
+    .select("id, quote_id, client_id, status, sign_token, snapshot, clients(name, company, email)")
     .eq("id", contractId)
     .eq("user_id", user.id)
-    .single();
-  if (!contract) return { error: "Contract not found" };
+    .single()) as unknown as {
+    data: {
+      id: string;
+      quote_id: string | null;
+      client_id: string | null;
+      status: string;
+      sign_token: string;
+      snapshot: Partial<ContractSnapshot> | null;
+      clients: { name: string | null; company: string | null; email: string | null } | null;
+    } | null;
+  };
+  if (!contract) redirect(withParams(safeFrom(from) ?? "/dashboard/clients", { package_error: "Contract not found." }));
 
+  // Where the result lands: the caller's page if it is one of ours, else the client's page.
+  const landing = safeFrom(from) ?? (contract.client_id ? `/dashboard/clients/${contract.client_id}` : `/dashboard/contracts/${contract.id}`);
   const now = new Date().toISOString();
+  const outcome: "sent" | "resent" = contract.status === "draft" ? "sent" : "resent";
 
   if (contract.status === "draft") {
     await supabase
@@ -160,7 +180,35 @@ export async function sendPackage(contractId: string) {
     }
   }
 
-  await logEvent(supabase, { userId: user.id, clientId: contract.client_id, kind: "package_sent", summary: "Package sent — quote, scope of work and agreement, one signing link", refType: "contract", refId: contract.id });
+  // The invitation. The link uses the public origin, never the request host —
+  // a link to localhost in a client's inbox goes nowhere.
+  const to = contract.clients?.email?.trim() || null;
+  let emailed = false;
+  let transport: string | null = null;
+  let note: string | null = to ? null : "the client has no email address on file";
+  if (to) {
+    const input: PackageEmailInput = {
+      origin: publicOrigin(),
+      signUrl: `${publicOrigin()}/sign/${contract.sign_token}`,
+      client: { name: contract.clients?.name ?? null, company: contract.clients?.company ?? null },
+      snapshot: contract.snapshot ?? {},
+    };
+    const result = await sendPackageEmail({ to, subject: packageEmailSubject(input), html: packageEmailHtml(input), text: packageEmailText(input) });
+    emailed = result.sent;
+    transport = result.via ?? null;
+    note = result.sent ? null : result.reason ?? "unknown error";
+  }
+
+  await logEvent(supabase, {
+    userId: user.id,
+    clientId: contract.client_id,
+    kind: "package_sent",
+    summary:
+      `Package ${outcome === "resent" ? "re-sent" : "sent"} — quote, scope of work and agreement, one signing link` +
+      (emailed ? ` — emailed to ${to}${transport ? ` via ${transport}` : ""}` : ` — email not sent (${note})`),
+    refType: "contract",
+    refId: contract.id,
+  });
 
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/contracts");
@@ -169,7 +217,14 @@ export async function sendPackage(contractId: string) {
   revalidatePath("/dashboard/scope");
   revalidatePath("/dashboard/clients");
   if (contract.client_id) revalidatePath(`/dashboard/clients/${contract.client_id}`);
-  return { ok: true };
+  redirect(withParams(landing, { package: outcome, emailed: emailed ? "1" : "0", ...(transport ? { transport } : {}), ...(note ? { note } : {}) }));
+}
+
+/** `path` with `params` set on its query string, whatever it already carries. */
+function withParams(path: string, params: Record<string, string>) {
+  const url = new URL(path, "http://hub.local");
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  return url.pathname + url.search;
 }
 
 export async function deleteContractRecord(id: string, from?: string) {
