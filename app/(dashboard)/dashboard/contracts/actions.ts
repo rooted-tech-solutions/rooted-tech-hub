@@ -35,6 +35,17 @@ export async function generateContractFromQuote(quoteId: string) {
 
   if (!quote) return { error: "Quote not found" };
 
+  // One agreement per quote. A retry (or a double submit) lands on the existing one.
+  const { data: existing } = await supabase
+    .from("contracts")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("quote_id", quote.id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (existing) redirect(`/dashboard/contracts/${existing.id}?from=/dashboard/clients/${quote.client_id}`);
+
   // Look up the most recent SOW for this client (prefer quote-linked, fallback to any)
   let sow: { sow_number: string; issued_date: string | null } | null = null;
   if (quote.client_id) {

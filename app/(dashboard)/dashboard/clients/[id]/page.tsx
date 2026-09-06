@@ -204,9 +204,11 @@ export default async function ClientDetailPage({
       .eq("user_id", user.id)
       .eq("client_id", client.id)
       .order("created_at", { ascending: false }),
+    // `quotes` is reachable from contracts two ways (contracts.quote_id and, since migration 010,
+    // quotes.contract_id for change orders) — name the relationship or PostgREST refuses the embed.
     supabase
       .from("contracts")
-      .select("*, quotes(id, title)")
+      .select("*, quotes!contracts_quote_id_fkey(id, title)")
       .eq("user_id", user.id)
       .eq("client_id", client.id)
       .order("created_at", { ascending: false }) as unknown as Promise<{ data: ContractRow[] | null }>,

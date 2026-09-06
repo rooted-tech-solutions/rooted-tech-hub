@@ -25,9 +25,11 @@ export default async function ContractsPage() {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
+  // `quotes` is reachable from contracts two ways (contracts.quote_id and, since migration 010,
+  // quotes.contract_id for change orders) — name the relationship or PostgREST refuses the embed.
   const { data: contracts } = (await supabase
     .from("contracts")
-    .select("id, status, sent_at, signed_at, signed_name, created_at, clients(id, name, company), quotes(id, title)")
+    .select("id, status, sent_at, signed_at, signed_name, created_at, clients(id, name, company), quotes!contracts_quote_id_fkey(id, title)")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })) as unknown as { data: ContractRow[] | null };
 
