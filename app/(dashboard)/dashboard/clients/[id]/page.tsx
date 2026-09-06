@@ -128,6 +128,11 @@ function Stamps({ items }: { items: [string, string | null | undefined][] }) {
   return <p className="mt-0.5 text-[11px] text-gray-400">{shown.join(" · ")}</p>;
 }
 
+/** The quote a submitted form asked for, if it is one we offered; otherwise the preferred one. */
+function pickQuoteId(allowed: string[], fallback: string | null, raw: FormDataEntryValue | null) {
+  return typeof raw === "string" && allowed.includes(raw) ? raw : fallback;
+}
+
 const rowAction = "text-[12px] font-medium text-gray-500 hover:text-brand-dark transition-colors";
 const rowPrimary =
   "text-[12px] font-semibold text-brand-dark bg-brand-light hover:bg-brand-mid hover:text-white rounded-md px-2.5 py-1 transition-colors";
@@ -299,6 +304,10 @@ export default async function ClientDetailPage({
   const mode = stripeMode();
   const nextAction = next.action;
   const contractId: string | null = contract?.id ?? null;
+  // Step 04 builds the agreement from a quote that is not declined and has no agreement yet.
+  const eligibleQuotes = proposals.filter((q) => q.status !== "declined" && !contracts.some((c) => c.quote_id === q.id));
+  const preferredQuoteId: string | null = (eligibleQuotes.find((q) => q.status === "accepted") ?? eligibleQuotes[0])?.id ?? null;
+  const eligibleQuoteIds: string[] = eligibleQuotes.map((q) => q.id);
 
   async function handleDeleteClient() {
     "use server";
@@ -315,6 +324,11 @@ export default async function ClientDetailPage({
   async function handleSendPackage() {
     "use server";
     if (contractId) await sendPackage(contractId);
+  }
+  async function handleGenerateContract(formData: FormData) {
+    "use server";
+    const quoteId = pickQuoteId(eligibleQuoteIds, preferredQuoteId, formData.get("quote_id"));
+    if (quoteId) await generateContractFromQuote(quoteId);
   }
 
   const nextActionButton =
@@ -670,10 +684,6 @@ export default async function ClientDetailPage({
                   "use server";
                   await deleteQuoteRecord(quote.id, here);
                 }
-                async function handleGenerate() {
-                  "use server";
-                  await generateContractFromQuote(quote.id);
-                }
                 async function handleStatus(formData: FormData) {
                   "use server";
                   await updateQuoteStatus(quote.id, String(formData.get("status") ?? ""), clientId);
@@ -709,11 +719,6 @@ export default async function ClientDetailPage({
                           </form>
                         </>
                       )}
-                      {!hasContract && quote.status !== "declined" && (
-                        <form action={handleGenerate}>
-                          <button type="submit" className={rowPrimary}>+ Contract</button>
-                        </form>
-                      )}
                       <Link href={`/dashboard/quotes/${quote.id}/edit?from=${back}`} className={rowAction}>Edit</Link>
                       <form action={handleDelete}>
                         <ConfirmButton label="Delete" confirmLabel="Delete?" {...rowDelete} disabled={hasContract} disabledReason="Delete its contract first." />
@@ -732,9 +737,38 @@ export default async function ClientDetailPage({
           title="Contract"
           current={next.section === 4}
           summary={contract && <StatusBadge status={contract.status} />}
+          actions={
+            eligibleQuotes.length > 0 && (
+              <form action={handleGenerateContract} className="flex items-center gap-2">
+                {eligibleQuotes.length > 1 && (
+                  <select
+                    name="quote_id"
+                    defaultValue={preferredQuoteId ?? undefined}
+                    aria-label="Quote to build the contract from"
+                    className="max-w-[12rem] truncate rounded-lg border border-brand-light bg-white px-2 py-1.5 text-xs text-brand-dark"
+                  >
+                    {eligibleQuotes.map((q) => (
+                      <option key={q.id} value={q.id}>
+                        {q.title}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <button type="submit" className={contracts.length === 0 ? headerButton : headerLink}>
+                  Generate Contract
+                </button>
+              </form>
+            )
+          }
         >
           {contracts.length === 0 ? (
-            <p className="text-sm text-gray-400">Generated from the quote with the payment schedule built in — use “+ Contract” on a quote above.</p>
+            <p className="text-sm text-gray-400">
+              {eligibleQuotes.length > 0
+                ? `Built from the quote${eligibleQuotes.length === 1 ? ` “${eligibleQuotes[0].title}”` : " you pick"} with the payment schedule included — press Generate Contract.`
+                : proposals.length > 0
+                  ? "The quote was declined — revise it or add a new one, then generate the agreement from that."
+                  : "Add a quote first — the agreement is generated from it."}
+            </p>
           ) : (
             <ul className="divide-y divide-brand-light">
               {contracts.map((c) => {

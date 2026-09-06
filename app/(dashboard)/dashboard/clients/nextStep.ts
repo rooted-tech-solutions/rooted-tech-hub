@@ -221,7 +221,7 @@ export function computeNextStep(x: StepInputs, from: string): NextStep {
       owner: "you",
       title: "Generate the contract",
       detail: "Built from the quote and frozen the moment it is sent.",
-      action: { kind: "generate-contract", label: "Generate the contract", quoteId: quote.id },
+      action: { kind: "generate-contract", label: "Generate Contract", quoteId: quote.id },
       href: at(4),
     };
   }
