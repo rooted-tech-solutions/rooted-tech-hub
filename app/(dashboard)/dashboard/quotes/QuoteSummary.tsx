@@ -1,16 +1,17 @@
-import { annualValue, fmtMoney, sumItems, summarizeBuild } from "./lineItems";
+import { fmtMoney, summarizeBuild } from "./lineItems";
+import { MAINTENANCE_LABEL, type Maintenance } from "./maintenance";
 import type { LineItem } from "./actions";
 
 /**
  * The generalized cost estimate: what a client reads.
  *
- * Three phases with what each includes and a phase total, then the care plan
- * as hours per month, what it covers, and the monthly and annual price. No
- * hours × rate arithmetic anywhere — that is the pricing worksheet, and it
- * stays on the owner's itemized view. Used by the quote page, the package
- * preview, and the public signing page.
+ * Three phases with what each includes and a phase total, then Maintenance &
+ * Hosting as one yearly price and what it covers. No hours × rate arithmetic
+ * anywhere — that is the pricing worksheet, and it stays on the owner's
+ * itemized view. Used by the quote page, the package preview, and the public
+ * signing page.
  */
-function SectionTitle({ num, title }: { num: number; title: string }) {
+export function SectionTitle({ num, title }: { num: number; title: string }) {
   return (
     <div className="mb-2.5 mt-6 flex items-center gap-2 border-b-[1.5px] border-brand-mid pb-1 text-sm font-bold text-brand-dark">
       <span className="inline-flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-full bg-brand-dark text-[11px] font-bold text-white">
@@ -21,20 +22,57 @@ function SectionTitle({ num, title }: { num: number; title: string }) {
   );
 }
 
+/** Section 2 of every quote document, summary or itemized. */
+export function MaintenanceSection({ num = 2, maintenance }: { num?: number; maintenance: Maintenance }) {
+  if (maintenance.annual <= 0 && maintenance.lines.length === 0) return null;
+  return (
+    <div>
+      <SectionTitle num={num} title={MAINTENANCE_LABEL} />
+      <div className="overflow-hidden rounded-lg border border-brand-light">
+        {maintenance.lines.length > 0 && (
+          <div className="px-4 py-3">
+            {maintenance.lines.length === 1 ? (
+              <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-700">{maintenance.description}</p>
+            ) : (
+              <>
+                <p className="text-sm text-brand-dark">Keeps your software running after launch, covering:</p>
+                <ul className="mt-2 grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
+                  {maintenance.lines.map((line, i) => (
+                    <li key={i} className="flex min-w-0 gap-2 break-words text-xs leading-relaxed text-gray-600">
+                      <span className="flex-shrink-0 font-bold text-brand-mid">•</span>
+                      <span className="min-w-0">{line}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        )}
+        <div className="flex items-center justify-between gap-4 border-t border-brand-light bg-brand-light/40 px-4 py-2.5 first:border-t-0">
+          <span className="text-xs font-semibold uppercase tracking-wide text-brand-dark">Per Year</span>
+          <span className="whitespace-nowrap text-base font-semibold text-brand-dark">
+            {fmtMoney(maintenance.annual)}
+            <span className="text-xs font-normal text-gray-500">/yr</span>
+          </span>
+        </div>
+        <p className="border-t border-brand-light px-4 py-2 text-xs text-gray-500">
+          Billed yearly · renews each year · cancel with 30 days&rsquo; notice
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function QuoteSummary({
   buildItems,
-  maintItems,
   buildTotal,
-  monthlyRetainer,
+  maintenance,
 }: {
   buildItems: LineItem[];
-  maintItems: LineItem[];
   buildTotal: number | null | undefined;
-  monthlyRetainer: number | null | undefined;
+  maintenance: Maintenance;
 }) {
   const phases = summarizeBuild(buildItems);
-  const care = sumItems(maintItems);
-  const annual = annualValue(monthlyRetainer);
 
   return (
     <div className="space-y-7">
@@ -43,18 +81,18 @@ export default function QuoteSummary({
           <SectionTitle num={1} title="The Build" />
           <div className="divide-y divide-brand-light overflow-hidden rounded-lg border border-brand-light">
             {phases.map((phase) => (
-              <div key={phase.key} className="flex items-start justify-between gap-6 px-4 py-3">
+              <div key={phase.key} className="flex items-start justify-between gap-4 px-4 py-3 sm:gap-6">
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-brand-dark">{phase.title}</p>
                   {phase.blurb && <p className="mt-0.5 text-xs leading-relaxed text-gray-500">{phase.blurb}</p>}
-                  <p className="mt-1.5 text-[11px] leading-relaxed text-gray-400">Includes: {phase.included.join(" · ")}</p>
+                  <p className="mt-1.5 break-words text-[11px] leading-relaxed text-gray-400">Includes: {phase.included.join(" · ")}</p>
                 </div>
                 <p className="whitespace-nowrap pt-0.5 text-sm font-semibold text-brand-dark">{fmtMoney(phase.total)}</p>
               </div>
             ))}
-            <div className="flex items-center justify-between bg-brand-light/40 px-4 py-2.5">
+            <div className="flex items-center justify-between gap-4 bg-brand-light/40 px-4 py-2.5">
               <span className="text-xs font-semibold uppercase tracking-wide text-brand-dark">Total Build Cost</span>
-              <span className="text-base font-semibold text-brand-dark">{fmtMoney(buildTotal)}</span>
+              <span className="whitespace-nowrap text-base font-semibold text-brand-dark">{fmtMoney(buildTotal)}</span>
             </div>
           </div>
           <p className="mt-2 text-[11px] text-gray-400">
@@ -63,34 +101,7 @@ export default function QuoteSummary({
         </div>
       )}
 
-      {maintItems.length > 0 && (
-        <div>
-          <SectionTitle num={2} title="Care Plan" />
-          <div className="overflow-hidden rounded-lg border border-brand-light">
-            <div className="px-4 py-3">
-              <p className="text-sm text-brand-dark">
-                <span className="font-semibold">{care.hours} hour{care.hours === 1 ? "" : "s"} of support each month</span>, covering:
-              </p>
-              <ul className="mt-2 grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
-                {maintItems.map((item) => (
-                  <li key={item.num || item.desc} className="flex gap-2 text-xs leading-relaxed text-gray-600">
-                    <span className="flex-shrink-0 font-bold text-brand-mid">•</span>
-                    {item.desc}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="flex items-center justify-between border-t border-brand-light bg-brand-light/40 px-4 py-2.5">
-              <span className="text-xs font-semibold uppercase tracking-wide text-brand-dark">Monthly Rate</span>
-              <span className="text-base font-semibold text-brand-dark">{fmtMoney(monthlyRetainer)}<span className="text-xs font-normal text-gray-500">/mo</span></span>
-            </div>
-            <div className="flex items-center justify-between border-t border-brand-light px-4 py-2 text-xs text-gray-500">
-              <span>Billed annually · renews yearly · cancel with 30 days&rsquo; notice</span>
-              <span className="font-medium text-brand-dark">{fmtMoney(annual)}/yr</span>
-            </div>
-          </div>
-        </div>
-      )}
+      <MaintenanceSection maintenance={maintenance} />
     </div>
   );
 }

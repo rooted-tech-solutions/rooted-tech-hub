@@ -3,9 +3,16 @@ import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import PrintButton from "@/components/ui/PrintButton";
-import { annualValue, fmtMoney, quoteNumber } from "@/app/(dashboard)/dashboard/quotes/lineItems";
+import { quoteNumber } from "@/app/(dashboard)/dashboard/quotes/lineItems";
 import QuoteSummary from "@/app/(dashboard)/dashboard/quotes/QuoteSummary";
-import { contractClauses, type ContractSnapshot } from "@/app/(dashboard)/dashboard/contracts/contractTerms";
+import { InfoCard, InfoField, QuoteTotals, ScopeBlock } from "@/app/(dashboard)/dashboard/quotes/QuoteDocument";
+import { maintenanceOfSnapshot } from "@/app/(dashboard)/dashboard/quotes/maintenance";
+import {
+  contractClauses,
+  isLegacyCarePlan,
+  scopeChangePolicy,
+  type ContractSnapshot,
+} from "@/app/(dashboard)/dashboard/contracts/contractTerms";
 import type { LineItem } from "@/app/(dashboard)/dashboard/quotes/actions";
 import type { SowItem } from "@/app/(dashboard)/dashboard/scope/actions";
 import SignatureForm from "./SignatureForm";
@@ -21,15 +28,13 @@ function fmtDateTime(value: string | null) {
   return new Date(value).toLocaleString("en-US", { year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
-function InfoField({ label, value }: { label: string; value: string | null | undefined }) {
-  return (
-    <div className="grid grid-cols-[88px_1fr] items-baseline gap-x-2.5 mb-0.5">
-      <span className="text-[10.5px] font-semibold text-brand-dark whitespace-nowrap">{label}</span>
-      <span className="text-[11px] text-brand-dark border-b border-dashed border-brand-light pb-0.5">{value || "—"}</span>
-    </div>
-  );
-}
-
+// Each document is a white sheet. On a phone the sheet runs nearly edge to
+// edge with tighter padding; from `sm` (and in print) it has its full margins.
+const sheet = "overflow-hidden rounded-xl bg-white shadow-[0_4px_32px_rgba(0,0,0,0.08)]";
+const sheetHead = "flex gap-4 border-b-[2.5px] border-brand-dark px-5 pb-5 pt-6 sm:flex-row sm:items-start sm:justify-between sm:gap-5 sm:px-9 sm:pt-7";
+const sheetBody = "px-5 pb-8 pt-6 sm:px-9";
+const sheetFoot = "border-t border-brand-light bg-brand-cream px-5 py-4 text-center text-xs text-gray-400 sm:px-8";
+const docTitle = "mb-1.5 text-lg font-bold uppercase tracking-wide text-brand-brown sm:text-[20px]";
 
 export default async function SignContractPage({ params }: { params: { token: string } }) {
   const supabase = createClient();
@@ -63,10 +68,10 @@ export default async function SignContractPage({ params }: { params: { token: st
   }) | null;
 
   const buildItems: LineItem[] = quote?.build_items ?? [];
-  const maintItems: LineItem[] = quote?.maintenance_items ?? [];
-  const annual = annualValue(quote?.monthly_retainer);
-  const contractTotal = (quote?.build_total ?? 0) + annual;
-  const deposit = contractTotal / 2;
+  // Prices come from the agreement's frozen snapshot, so the quote section
+  // always matches the contract the client is signing.
+  const maintenance = maintenanceOfSnapshot(snapshot);
+  const buildTotal = snapshot.build_total ?? quote?.build_total ?? 0;
 
   async function action(prevState: { error?: string; success?: boolean } | null, formData: FormData) {
     "use server";
@@ -74,14 +79,14 @@ export default async function SignContractPage({ params }: { params: { token: st
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 py-10 px-4">
+    <div className="min-h-screen bg-gray-100 px-3 py-5 sm:px-4 sm:py-10">
       <div className="max-w-4xl mx-auto">
 
         {/* Header */}
-        <div className="flex items-center justify-between mb-8 print:hidden">
-          <Image src="/logo.png" alt="Rooted Tech Solutions" width={300} height={138} className="h-14 w-auto" priority />
+        <div className="mb-5 flex items-center justify-between gap-3 sm:mb-8 print:hidden">
+          <Image src="/logo.png" alt="Rooted Tech Solutions" width={300} height={138} className="h-10 w-auto sm:h-14" priority />
           <div className="flex items-center gap-4">
-            <div className="text-right">
+            <div className="hidden text-right sm:block">
               <p className="text-xs font-semibold text-brand-dark uppercase tracking-wide">Client Package</p>
               <p className="text-xs text-gray-500 mt-0.5">
                 {snapshot.client_company || snapshot.client_name || "Client"}
@@ -92,15 +97,15 @@ export default async function SignContractPage({ params }: { params: { token: st
           </div>
         </div>
 
-        <div className="space-y-8">
+        <div className="space-y-5 sm:space-y-8">
 
           {/* ── DOCUMENT 1: QUOTE ── */}
           {quote && (
-            <div className="bg-white rounded-xl shadow-[0_4px_32px_rgba(0,0,0,0.08)] overflow-hidden">
-              <div className="px-9 pt-7 pb-5 flex items-start justify-between gap-5 border-b-[2.5px] border-brand-dark">
-                <Image src="/logo.png" alt="Rooted Tech Solutions" width={300} height={138} className="h-20 w-auto" />
-                <div className="text-right">
-                  <p className="text-[20px] font-bold text-brand-brown uppercase tracking-wide mb-1.5">Cost Estimate</p>
+            <div className={sheet}>
+              <div className={`${sheetHead} flex-col`}>
+                <Image src="/logo.png" alt="Rooted Tech Solutions" width={300} height={138} className="h-14 w-auto self-start sm:h-20" />
+                <div className="sm:text-right">
+                  <p className={docTitle}>Cost Estimate</p>
                   <div className="flex flex-col gap-0.5 text-[11.5px] text-gray-500">
                     <p><span className="font-medium">Quote #:</span> <span className="text-brand-dark font-mono">{quoteNumber(quote.id, quote.issued_date)}</span></p>
                     <p><span className="font-medium">Date:</span> <span className="text-brand-dark">{fmtDate(quote.issued_date)}</span></p>
@@ -109,65 +114,29 @@ export default async function SignContractPage({ params }: { params: { token: st
                 </div>
               </div>
 
-              <div className="px-9 pt-6 pb-8">
+              <div className={sheetBody}>
                 {/* Client / Project */}
-                <div className="grid grid-cols-2 gap-3.5 mb-7">
-                  <div className="bg-brand-cream border border-brand-light rounded-lg px-4 py-3.5">
-                    <p className="text-[9.5px] font-bold uppercase tracking-[0.1em] text-brand-dark mb-2.5">Client</p>
+                <div className="mb-7 grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+                  <InfoCard title="Client">
                     <InfoField label="Name" value={snapshot.client_name} />
                     <InfoField label="Company" value={snapshot.client_company} />
-                  </div>
-                  <div className="bg-brand-cream border border-brand-light rounded-lg px-4 py-3.5">
-                    <p className="text-[9.5px] font-bold uppercase tracking-[0.1em] text-brand-dark mb-2.5">Project</p>
+                  </InfoCard>
+                  <InfoCard title="Project">
                     <InfoField label="Project" value={quote.project_name} />
-                    <InfoField label="Scope" value={quote.scope} />
                     <InfoField label="Timeline" value={quote.timeline} />
-                  </div>
+                  </InfoCard>
+                  <ScopeBlock scope={quote.scope} />
                 </div>
 
-                {/* What is being quoted — the phases and the care plan, never the pricing worksheet. */}
+                {/* What is being quoted — the phases and Maintenance & Hosting, never the pricing worksheet. */}
                 <div className="mb-7">
-                  <QuoteSummary
-                    buildItems={buildItems}
-                    maintItems={maintItems}
-                    buildTotal={quote.build_total}
-                    monthlyRetainer={quote.monthly_retainer}
-                  />
+                  <QuoteSummary buildItems={buildItems} buildTotal={buildTotal} maintenance={maintenance} />
                 </div>
 
                 {/* Totals */}
-                <div className="space-y-3 max-w-2xl ml-auto">
-                  <div className="bg-brand-light/40 rounded-lg border border-brand-light divide-y divide-brand-light overflow-hidden">
-                    <div className="flex items-center justify-between px-5 py-2.5">
-                      <span className="text-xs text-gray-500 uppercase tracking-wide">Build Total</span>
-                      <span className="text-sm font-medium text-brand-dark">{fmtMoney(quote.build_total)}</span>
-                    </div>
-                    <div className="flex items-center justify-between px-5 py-2.5">
-                      <span className="text-xs text-gray-500 uppercase tracking-wide">Annual Maintenance <span className="normal-case font-normal">({fmtMoney(quote.monthly_retainer)}/mo × 12)</span></span>
-                      <span className="text-sm font-medium text-brand-dark">{fmtMoney(annual)}</span>
-                    </div>
-                    <div className="flex items-center justify-between px-5 py-3 bg-brand-dark/5">
-                      <span className="text-sm font-bold text-brand-dark uppercase tracking-wide">Total Contract Value</span>
-                      <span className="text-xl font-bold text-brand-dark">{fmtMoney(contractTotal)}</span>
-                    </div>
-                  </div>
-                  <div className="bg-brand-cream rounded-lg border border-brand-light divide-y divide-brand-light overflow-hidden">
-                    <div className="flex items-center justify-between px-5 py-2.5">
-                      <div><span className="text-xs font-semibold text-brand-dark">Invoice 1 — Deposit</span><span className="text-[10px] text-gray-400 ml-2">Due upon contract signing</span></div>
-                      <span className="text-sm font-semibold text-brand-dark">{fmtMoney(deposit)}</span>
-                    </div>
-                    <div className="flex items-center justify-between px-5 py-2.5">
-                      <div><span className="text-xs font-semibold text-brand-dark">Invoice 2 — Final Payment</span><span className="text-[10px] text-gray-400 ml-2">Due upon delivery &amp; acceptance</span></div>
-                      <span className="text-sm font-semibold text-brand-dark">{fmtMoney(deposit)}</span>
-                    </div>
-                    <div className="flex items-center justify-between px-5 py-2.5">
-                      <div><span className="text-xs font-semibold text-brand-dark">Annual Renewal</span><span className="text-[10px] text-gray-400 ml-2">Due on renewal date each year</span></div>
-                      <span className="text-sm font-semibold text-brand-dark">{fmtMoney(annual)}</span>
-                    </div>
-                  </div>
-                </div>
+                <QuoteTotals buildTotal={buildTotal} annual={maintenance.annual} />
               </div>
-              <div className="border-t border-brand-light px-8 py-4 text-center text-xs text-gray-400 bg-brand-cream">
+              <div className={sheetFoot}>
                 Rooted Tech Solutions · rootedtechsolutions.com
               </div>
             </div>
@@ -175,28 +144,28 @@ export default async function SignContractPage({ params }: { params: { token: st
 
           {/* ── DOCUMENT 2: SOW ── */}
           {sow && (
-            <div className="bg-white rounded-xl shadow-[0_4px_32px_rgba(0,0,0,0.08)] overflow-hidden">
-              <div className="px-9 pt-7 pb-5 flex items-start justify-between gap-5 border-b-[2.5px] border-brand-dark">
-                <div>
-                  <p className="text-[20px] font-bold text-brand-brown uppercase tracking-wide mb-1.5">Scope of Work</p>
+            <div className={sheet}>
+              <div className={`${sheetHead} flex-col-reverse sm:flex-row`}>
+                <div className="min-w-0">
+                  <p className={docTitle}>Scope of Work</p>
                   <p className="text-sm text-gray-500">
                     {snapshot.client_company || snapshot.client_name || "Client"}
                     {sow.title ? ` — ${sow.title}` : ""}
                   </p>
                 </div>
-                <div className="flex flex-col items-end gap-1">
-                  <Image src="/logo.png" alt="Rooted Tech Solutions" width={200} height={92} className="h-16 w-auto" />
-                  <div className="text-right text-[11px] text-gray-500 space-y-0.5 mt-1">
+                <div className="flex flex-col items-start gap-1 sm:items-end">
+                  <Image src="/logo.png" alt="Rooted Tech Solutions" width={200} height={92} className="h-12 w-auto sm:h-16" />
+                  <div className="mt-1 space-y-0.5 text-[11px] text-gray-500 sm:text-right">
                     <p><span className="font-medium">Document:</span> <span className="font-mono text-brand-dark">{sow.sow_number}</span></p>
                     <p><span className="font-medium">Date:</span> <span className="text-brand-dark">{fmtDate(sow.issued_date)}</span></p>
                   </div>
                 </div>
               </div>
-              <div className="px-9 pt-6 pb-8 space-y-7">
+              <div className={`${sheetBody} space-y-7`}>
                 {sow.notes && (
                   <div>
                     <p className="text-sm font-bold text-brand-dark mb-2 pb-1 border-b border-brand-light">Project Overview &amp; Discovery Notes</p>
-                    <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{sow.notes}</p>
+                    <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap break-words">{sow.notes}</p>
                   </div>
                 )}
                 {(sow.deliverables ?? []).length > 0 && (
@@ -238,29 +207,29 @@ export default async function SignContractPage({ params }: { params: { token: st
                 <div className="bg-brand-cream border border-brand-light rounded-lg px-5 py-4">
                   <p className="text-xs font-semibold text-brand-dark uppercase tracking-wide mb-1.5">Scope Change Policy</p>
                   <p className="text-sm text-gray-600 leading-relaxed">
-                    Any work requested outside the deliverables listed above — or beyond the allocated monthly hours defined in the accompanying service agreement — is considered a scope change. Scope changes will be assessed, quoted in writing, and require written approval before work begins. Rooted Tech Solutions will not perform out-of-scope work without a signed change order.
+                    {scopeChangePolicy(isLegacyCarePlan(snapshot) && (snapshot.monthly_hours ?? 0) > 0)}
                   </p>
                 </div>
               </div>
-              <div className="border-t border-brand-light px-8 py-4 text-center text-xs text-gray-400 bg-brand-cream">
+              <div className={sheetFoot}>
                 Rooted Tech Solutions · rootedtechsolutions.com
               </div>
             </div>
           )}
 
           {/* ── DOCUMENT 3: CONTRACT + SIGNATURE ── */}
-          <div className="bg-white rounded-xl shadow-[0_4px_32px_rgba(0,0,0,0.08)] overflow-hidden">
-            <div className="px-9 pt-7 pb-5 border-b-[2.5px] border-brand-dark flex items-start justify-between gap-5">
-              <div>
-                <p className="text-[20px] font-bold text-brand-brown uppercase tracking-wide mb-1.5">Service Agreement</p>
+          <div className={sheet}>
+            <div className={`${sheetHead} flex-col-reverse sm:flex-row`}>
+              <div className="min-w-0">
+                <p className={docTitle}>Service Agreement</p>
                 <p className="text-sm text-gray-500">
                   Between Rooted Tech Solutions and {snapshot.client_company || snapshot.client_name || "Client"}
                   {snapshot.project_name ? ` — ${snapshot.project_name}` : ""}
                 </p>
               </div>
-              <Image src="/logo.png" alt="Rooted Tech Solutions" width={300} height={138} className="h-16 w-auto" />
+              <Image src="/logo.png" alt="Rooted Tech Solutions" width={300} height={138} className="h-12 w-auto self-start sm:h-16" />
             </div>
-            <div className="px-9 pt-6 pb-8">
+            <div className={sheetBody}>
               <div className="space-y-5">
                 {clauses.map((clause) => (
                   <div key={clause.title}>
@@ -274,11 +243,11 @@ export default async function SignContractPage({ params }: { params: { token: st
                 {contract.contract_status === "signed" ? (
                   <div>
                     <p className="text-xs font-semibold text-brand-dark uppercase tracking-wide mb-3">Electronically Signed</p>
-                    <p className="text-2xl text-brand-dark mb-1" style={{ fontFamily: "cursive" }}>{contract.signer_name}</p>
+                    <p className="text-2xl text-brand-dark mb-1 break-words" style={{ fontFamily: "cursive" }}>{contract.signer_name}</p>
                     <p className="text-xs text-gray-400">{fmtDateTime(contract.signed_at)}</p>
                   </div>
                 ) : (
-                  <div className="flex flex-col items-start gap-3 print:hidden">
+                  <div className="flex flex-col items-stretch gap-3 sm:items-start print:hidden">
                     <p className="text-xs text-gray-500 leading-relaxed">
                       By clicking the button below, you confirm that you have read and agree to all terms outlined in this service agreement and the accompanying quote. Your electronic signature has the same legal effect as a handwritten signature under the E-SIGN Act.
                     </p>
@@ -287,7 +256,7 @@ export default async function SignContractPage({ params }: { params: { token: st
                 )}
               </div>
             </div>
-            <div className="border-t border-brand-light px-8 py-4 text-center text-xs text-gray-400 bg-brand-cream">
+            <div className={sheetFoot}>
               Rooted Tech Solutions · rootedtechsolutions.com
             </div>
           </div>

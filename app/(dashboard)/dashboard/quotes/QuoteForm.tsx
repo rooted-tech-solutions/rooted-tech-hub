@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { addDaysISO } from "@/lib/dates";
 import LineItemTable from "./LineItemTable";
-import { BUILD_ITEMS, MAINTENANCE_ITEMS, fmtMoney } from "./lineItems";
+import { BUILD_ITEMS, fmtMoney } from "./lineItems";
+import { DEFAULT_MAINTENANCE_DESCRIPTION, MAINTENANCE_LABEL, maintenanceOf } from "./maintenance";
 import type { LineItem } from "./actions";
 
 type Client = { id: string; name: string; company: string | null };
@@ -23,6 +24,9 @@ type QuoteFormValues = {
   notes?: string | null;
   build_items?: LineItem[] | null;
   maintenance_items?: LineItem[] | null;
+  maintenance_annual?: number | null;
+  maintenance_description?: string | null;
+  monthly_retainer?: number | null;
   kind?: string | null;
   contract_id?: string | null;
 };
@@ -73,7 +77,15 @@ export default function QuoteForm({
   const [values] = useState<QuoteFormValues>(initialValues ?? {});
   const [defaultRate, setDefaultRate] = useState<number | undefined>(undefined);
   const [buildSubtotal, setBuildSubtotal] = useState(0);
-  const [maintSubtotal, setMaintSubtotal] = useState(0);
+  // A quote saved before migration 011 opens with its old monthly items turned
+  // into a yearly price and a description, ready to save in the new shape.
+  const isNew = !(initialValues && "id" in initialValues);
+  const initialMaintenance = maintenanceOf(values);
+  const [maintAnnual, setMaintAnnual] = useState<string>(
+    initialMaintenance.annual > 0 ? String(initialMaintenance.annual) : "",
+  );
+  const maintAnnualNumber = Number(maintAnnual.replace(/[$,\s]/g, "")) || 0;
+  const isChangeOrder = values.kind === "change_order";
   const [issuedDate, setIssuedDate] = useState(values.issued_date ?? "");
   const [expiryDate, setExpiryDate] = useState(values.expiry_date ?? "");
 
@@ -90,7 +102,7 @@ export default function QuoteForm({
       {values.kind === "change_order" && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           <span className="font-semibold">Change order.</span> Work outside the signed agreement. Price it in the build items — it is billed
-          separately on acceptance, and the care plan is untouched.
+          separately on acceptance, and {MAINTENANCE_LABEL} is untouched.
         </div>
       )}
       {state?.error && (
@@ -264,30 +276,67 @@ export default function QuoteForm({
         onSubtotalChange={setBuildSubtotal}
         variant="build"
       />
-      <LineItemTable
-        fieldName="maintenance_items_json"
-        initialItems={values.maintenance_items?.length ? values.maintenance_items : MAINTENANCE_ITEMS.map((i) => ({ ...i, hours: 0, rate: 0 }))}
-        title="Maintenance Phase (Monthly)"
-        subtotalLabel="Monthly Rate"
-        defaultRate={defaultRate}
-        onSubtotalChange={setMaintSubtotal}
-        variant="maintenance"
-      />
+      {!isChangeOrder && (
+        <div>
+          <p className="text-xs font-semibold text-brand-dark uppercase tracking-wide mb-2">{MAINTENANCE_LABEL}</p>
+          <div className="rounded-lg border border-brand-light p-4 space-y-4">
+            <div className="max-w-xs">
+              <label className={labelClass} htmlFor="maintenance_annual">
+                Price per year
+              </label>
+              <div className="relative">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">$</span>
+                <input
+                  id="maintenance_annual"
+                  name="maintenance_annual"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  value={maintAnnual}
+                  onChange={(e) => setMaintAnnual(e.target.value)}
+                  className={`${inputClass} pl-7`}
+                  placeholder="e.g. 3600"
+                />
+              </div>
+              <p className="mt-1 text-[11px] text-gray-400">Billed with the build in year one, then once a year on the renewal date.</p>
+            </div>
+            <div>
+              <label className={labelClass} htmlFor="maintenance_description">
+                What it covers
+              </label>
+              <textarea
+                id="maintenance_description"
+                name="maintenance_description"
+                rows={6}
+                defaultValue={isNew ? DEFAULT_MAINTENANCE_DESCRIPTION : initialMaintenance.description}
+                className={inputClass}
+                placeholder={DEFAULT_MAINTENANCE_DESCRIPTION}
+              />
+              <p className="mt-1 text-[11px] text-gray-400">One item per line — the client sees them as a list.</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Grand totals */}
-      <div className="bg-brand-light/40 rounded-lg border border-brand-light px-5 py-4 grid grid-cols-3 gap-4 max-w-xl ml-auto">
+      <div className="bg-brand-light/40 rounded-lg border border-brand-light px-5 py-4 grid grid-cols-1 gap-4 sm:grid-cols-3 max-w-xl ml-auto">
         <div>
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total Build Cost</p>
           <p className="text-lg font-semibold text-brand-dark">{fmtMoney(buildSubtotal)}</p>
         </div>
-        <div>
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Monthly Rate</p>
-          <p className="text-lg font-semibold text-brand-dark">{fmtMoney(maintSubtotal)}</p>
-        </div>
-        <div>
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Annual Total</p>
-          <p className="text-lg font-semibold text-brand-mid">{fmtMoney(maintSubtotal * 12)}</p>
-        </div>
+        {!isChangeOrder && (
+          <>
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{MAINTENANCE_LABEL} / yr</p>
+              <p className="text-lg font-semibold text-brand-dark">{fmtMoney(maintAnnualNumber)}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">First Year Total</p>
+              <p className="text-lg font-semibold text-brand-mid">{fmtMoney(buildSubtotal + maintAnnualNumber)}</p>
+            </div>
+          </>
+        )}
       </div>
 
       <div>

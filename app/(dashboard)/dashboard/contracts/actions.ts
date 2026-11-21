@@ -20,7 +20,9 @@ export async function generateContractFromQuote(quoteId: string) {
 
   const { data: quote } = (await supabase
     .from("quotes")
-    .select("id, client_id, project_name, scope, maintenance_items, monthly_retainer, build_total, clients(name, company)")
+    // "*" rather than a column list: the Maintenance & Hosting columns
+    // (migration 011) may not exist yet, and naming them would fail the read.
+    .select("*, clients(name, company)")
     .eq("id", quoteId)
     .eq("user_id", user.id)
     .single()) as unknown as {
@@ -31,6 +33,8 @@ export async function generateContractFromQuote(quoteId: string) {
       scope: string | null;
       maintenance_items: import("../quotes/actions").LineItem[] | null;
       monthly_retainer: number | null;
+      maintenance_annual?: number | null;
+      maintenance_description?: string | null;
       build_total: number | null;
       clients: { name: string | null; company: string | null } | null;
     } | null;

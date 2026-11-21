@@ -42,6 +42,14 @@ function sumLineItems(items: LineItem[]) {
   return items.reduce((sum, item) => sum + item.hours * item.rate, 0);
 }
 
+/** Until migration 011 runs, the new Maintenance & Hosting columns do not exist. */
+function saveError(error: { code?: string; message: string }) {
+  if ((error.code === "PGRST204" || error.code === "42703") && /maintenance_(annual|description)/.test(error.message)) {
+    return "Run supabase/migrations/011_maintenance_hosting.sql in Supabase first — the quote's Maintenance & Hosting price has nowhere to be saved until then.";
+  }
+  return error.message;
+}
+
 function parseQuoteFields(formData: FormData) {
   const title = fieldOrNull(formData, "title");
   if (!title) return { error: "Title is required" } as const;
@@ -58,9 +66,18 @@ function parseQuoteFields(formData: FormData) {
   const extra = kind ? { kind, contract_id: fieldOrNull(formData, "contract_id") } : {};
 
   const build_items = parseLineItemsJson(formData, "build_items_json");
-  const maintenance_items = parseLineItemsJson(formData, "maintenance_items_json");
   const build_total = sumLineItems(build_items);
-  const monthly_retainer = sumLineItems(maintenance_items);
+
+  // Maintenance & Hosting (migration 011): one yearly price and what it covers.
+  // The itemized monthly care plan is retired; monthly_retainer is kept as the
+  // yearly price ÷ 12 only so anything still reading the old column stays sane.
+  const annualRaw = fieldOrNull(formData, "maintenance_annual");
+  const maintenance_annual = annualRaw === null ? 0 : Number(annualRaw.replace(/[$,\s]/g, ""));
+  if (!Number.isFinite(maintenance_annual) || maintenance_annual < 0) {
+    return { error: "Maintenance & Hosting must be a yearly dollar amount" } as const;
+  }
+  const maintenance_description = fieldOrNull(formData, "maintenance_description");
+  const monthly_retainer = Math.round((maintenance_annual / 12) * 100) / 100;
 
   return {
     values: {
@@ -76,7 +93,9 @@ function parseQuoteFields(formData: FormData) {
       expiry_date: fieldOrNull(formData, "expiry_date"),
       notes: fieldOrNull(formData, "notes"),
       build_items,
-      maintenance_items,
+      maintenance_items: [] as LineItem[],
+      maintenance_annual,
+      maintenance_description,
       build_total,
       monthly_retainer,
       amount: build_total,
@@ -101,7 +120,7 @@ export async function createQuoteRecord(formData: FormData) {
     .select("id")
     .single();
 
-  if (error) return { error: error.message };
+  if (error) return { error: saveError(error) };
   await logEvent(supabase, { userId: user.id, clientId: parsed.values.client_id, kind: "quote_created", summary: `Quote “${parsed.values.title}” created`, refType: "quote", refId: created?.id ?? null });
 
   const from = formData.get("from");
@@ -126,7 +145,7 @@ export async function updateQuoteRecord(id: string, formData: FormData) {
     .eq("id", id)
     .eq("user_id", user.id);
 
-  if (error) return { error: error.message };
+  if (error) return { error: saveError(error) };
 
   const from = formData.get("from");
   revalidatePath("/dashboard/quotes");

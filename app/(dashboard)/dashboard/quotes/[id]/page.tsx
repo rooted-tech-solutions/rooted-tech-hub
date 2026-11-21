@@ -5,10 +5,12 @@ import { createClient } from "@/lib/supabase/server";
 import ConfirmButton from "@/components/ui/ConfirmButton";
 import { StatusBadge } from "../statusBadge";
 import { backLink } from "../../backLink";
-import QuoteSummary from "../QuoteSummary";
+import QuoteSummary, { MaintenanceSection } from "../QuoteSummary";
+import { InfoCard, InfoField, QuoteTotals, ScopeBlock, paymentNotes } from "../QuoteDocument";
+import { MAINTENANCE_LABEL, maintenanceOf } from "../maintenance";
 import { deleteQuoteRecord, updateQuoteStatus } from "../actions";
 import { generateContractFromQuote } from "../../contracts/actions";
-import { annualValue, fmtMoney, quoteNumber } from "../lineItems";
+import { fmtMoney, quoteNumber } from "../lineItems";
 import type { LineItem } from "../actions";
 
 function fmtDate(value: string | null) {
@@ -18,15 +20,6 @@ function fmtDate(value: string | null) {
     month: "long",
     day: "numeric",
   });
-}
-
-function InfoField({ label, value }: { label: string; value: string | null | undefined }) {
-  return (
-    <div className="grid grid-cols-[88px_1fr] items-baseline gap-x-2.5 gap-y-1 mb-0.5">
-      <span className="text-[10.5px] font-semibold text-brand-dark whitespace-nowrap">{label}</span>
-      <span className="text-[11px] text-brand-dark border-b border-dashed border-brand-light pb-0.5">{value || "—"}</span>
-    </div>
-  );
 }
 
 function SectionTitle({ num, title }: { num: number; title: string }) {
@@ -127,7 +120,7 @@ export default async function QuoteDetailPage({
   const here = `/dashboard/quotes/${quote.id}`;
 
   const buildItems: LineItem[] = quote.build_items ?? [];
-  const maintItems: LineItem[] = quote.maintenance_items ?? [];
+  const maintenance = maintenanceOf(quote);
 
   const { data: contract } = await supabase
     .from("contracts")
@@ -236,12 +229,12 @@ export default async function QuoteDetailPage({
       {/* Document */}
       <div className="bg-white rounded-xl shadow-[0_4px_32px_rgba(0,0,0,0.10),0_1px_4px_rgba(0,0,0,0.06)] overflow-hidden max-w-4xl">
         {/* Doc header */}
-        <div className="px-9 pt-7 pb-5 flex items-start justify-between gap-5 border-b-[2.5px] border-brand-dark">
+        <div className="flex flex-col gap-4 border-b-[2.5px] border-brand-dark px-5 pb-5 pt-6 sm:flex-row sm:items-start sm:justify-between sm:gap-5 sm:px-9 sm:pt-7">
           <div className="flex items-center">
-            <Image src="/logo.png" alt="Rooted Tech Solutions" width={300} height={138} className="h-24 w-auto" priority />
+            <Image src="/logo.png" alt="Rooted Tech Solutions" width={300} height={138} className="h-16 w-auto sm:h-24" priority />
           </div>
-          <div className="text-right">
-            <p className="text-[20px] font-bold text-brand-brown uppercase tracking-wide mb-1.5">
+          <div className="sm:text-right">
+            <p className="text-lg sm:text-[20px] font-bold text-brand-brown uppercase tracking-wide mb-1.5">
               {quote.kind === "change_order" ? "Change Order" : "Cost Estimate"}
             </p>
             <div className="flex flex-col gap-0.5 text-[11.5px] text-gray-500">
@@ -261,23 +254,21 @@ export default async function QuoteDetailPage({
           </div>
         </div>
 
-        <div className="px-9 pt-6 pb-8">
+        <div className="px-5 pb-8 pt-6 sm:px-9">
           {/* Client / Project info */}
-          <div className="grid grid-cols-2 gap-3.5 mb-7">
-            <div className="bg-brand-cream border border-brand-light rounded-lg px-4 py-3.5">
-              <p className="text-[9.5px] font-bold uppercase tracking-[0.1em] text-brand-dark mb-2.5">Client</p>
+          <div className="mb-7 grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+            <InfoCard title="Client">
               <InfoField label="Name" value={quote.clients?.name} />
               <InfoField label="Company" value={quote.clients?.company} />
               <InfoField label="Email" value={quote.clients?.email} />
               <InfoField label="Phone" value={quote.clients?.phone} />
-            </div>
-            <div className="bg-brand-cream border border-brand-light rounded-lg px-4 py-3.5">
-              <p className="text-[9.5px] font-bold uppercase tracking-[0.1em] text-brand-dark mb-2.5">Project</p>
+            </InfoCard>
+            <InfoCard title="Project">
               <InfoField label="Project" value={quote.project_name} />
-              <InfoField label="Scope" value={quote.scope} />
               <InfoField label="Timeline" value={quote.timeline} />
               <InfoField label="Prepared By" value={quote.prepared_by} />
-            </div>
+            </InfoCard>
+            <ScopeBlock scope={quote.scope} />
           </div>
 
           {itemized ? (
@@ -289,20 +280,13 @@ export default async function QuoteDetailPage({
                 subtotalLabel="Total Build Cost"
                 subtotal={quote.build_total ?? 0}
               />
-              <LineItemSection
-                num={2}
-                title="Annual Maintenance"
-                items={maintItems}
-                subtotalLabel="Monthly Rate (billed annually)"
-                subtotal={quote.monthly_retainer ?? 0}
-              />
+              {quote.kind !== "change_order" && <MaintenanceSection maintenance={maintenance} />}
             </div>
           ) : (
             <QuoteSummary
               buildItems={buildItems}
-              maintItems={maintItems}
               buildTotal={quote.build_total}
-              monthlyRetainer={quote.monthly_retainer}
+              maintenance={quote.kind === "change_order" ? { annual: 0, description: "", lines: [] } : maintenance}
             />
           )}
 
@@ -315,56 +299,11 @@ export default async function QuoteDetailPage({
               </div>
               <p className="mt-2 text-right text-[11px] text-gray-500">Billed separately from the original agreement, on acceptance.</p>
             </div>
-          ) : (() => {
-            const annual = annualValue(quote.monthly_retainer);
-            const contractTotal = (quote.build_total ?? 0) + annual;
-            const deposit = contractTotal / 2;
-            return (
-              <div className="mt-7 space-y-3 max-w-2xl ml-auto">
-                {/* Breakdown */}
-                <div className="bg-brand-light/40 rounded-lg border border-brand-light divide-y divide-brand-light overflow-hidden">
-                  <div className="flex items-center justify-between px-5 py-2.5">
-                    <span className="text-xs text-gray-500 uppercase tracking-wide">Build Total</span>
-                    <span className="text-sm font-medium text-brand-dark">{fmtMoney(quote.build_total)}</span>
-                  </div>
-                  <div className="flex items-center justify-between px-5 py-2.5">
-                    <span className="text-xs text-gray-500 uppercase tracking-wide">
-                      Annual Maintenance <span className="normal-case font-normal">({fmtMoney(quote.monthly_retainer)}/mo × 12)</span>
-                    </span>
-                    <span className="text-sm font-medium text-brand-dark">{fmtMoney(annual)}</span>
-                  </div>
-                  <div className="flex items-center justify-between px-5 py-3 bg-brand-dark/5">
-                    <span className="text-sm font-bold text-brand-dark uppercase tracking-wide">Total Contract Value</span>
-                    <span className="text-xl font-bold text-brand-dark">{fmtMoney(contractTotal)}</span>
-                  </div>
-                </div>
-                {/* Payment schedule */}
-                <div className="bg-brand-cream rounded-lg border border-brand-light divide-y divide-brand-light overflow-hidden">
-                  <div className="flex items-center justify-between px-5 py-2.5">
-                    <div>
-                      <span className="text-xs font-semibold text-brand-dark">Invoice 1 — Deposit</span>
-                      <span className="text-[10px] text-gray-400 ml-2">Due upon contract signing</span>
-                    </div>
-                    <span className="text-sm font-semibold text-brand-dark">{fmtMoney(deposit)}</span>
-                  </div>
-                  <div className="flex items-center justify-between px-5 py-2.5">
-                    <div>
-                      <span className="text-xs font-semibold text-brand-dark">Invoice 2 — Final Payment</span>
-                      <span className="text-[10px] text-gray-400 ml-2">Due upon delivery &amp; acceptance</span>
-                    </div>
-                    <span className="text-sm font-semibold text-brand-dark">{fmtMoney(deposit)}</span>
-                  </div>
-                  <div className="flex items-center justify-between px-5 py-2.5">
-                    <div>
-                      <span className="text-xs font-semibold text-brand-dark">Annual Renewal</span>
-                      <span className="text-[10px] text-gray-400 ml-2">Due on renewal date each year</span>
-                    </div>
-                    <span className="text-sm font-semibold text-brand-dark">{fmtMoney(annual)}</span>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
+          ) : (
+            <div className="mt-7">
+              <QuoteTotals buildTotal={quote.build_total} annual={maintenance.annual} />
+            </div>
+          )}
 
           {/* Notes / Payment terms */}
           <div className="mt-7">
@@ -373,16 +312,15 @@ export default async function QuoteDetailPage({
               {(quote.kind === "change_order"
                 ? [
                     "This change order covers work outside the signed agreement and is billed separately, on acceptance.",
-                    "It does not change the care plan or the payment schedule already agreed.",
+                    `It does not change ${MAINTENANCE_LABEL} or the payment schedule already agreed.`,
                     "All prices are in USD.",
                   ]
-                : [
-                `A 50% deposit of ${fmtMoney((((quote.build_total ?? 0) + annualValue(quote.monthly_retainer)) / 2))} is due upon contract signing to begin work.`,
-                `The remaining 50% of ${fmtMoney((((quote.build_total ?? 0) + annualValue(quote.monthly_retainer)) / 2))} is due upon final delivery and client acceptance.`,
-                `Annual maintenance renews at ${fmtMoney(annualValue(quote.monthly_retainer))}/year on the renewal date. Cancellation prior to renewal is prorated for unused months.`,
-                "Scope changes or additional features will be quoted separately via written change order.",
-                `This quote is valid for ${quote.valid_for || "30 days"} from the date issued. All prices are in USD.`,
-              ]).map((note) => (
+                : paymentNotes({
+                    buildTotal: quote.build_total,
+                    annual: maintenance.annual,
+                    validity: `This quote is valid for ${quote.valid_for || "30 days"} from the date issued. All prices are in USD.`,
+                  })
+              ).map((note) => (
                 <li key={note} className="text-xs text-gray-500 flex gap-2">
                   <span className="text-brand-mid font-bold flex-shrink-0">•</span>
                   {note}

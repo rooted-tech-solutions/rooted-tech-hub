@@ -111,7 +111,7 @@ export function computeNextStep(x: StepInputs, from: string): NextStep {
     };
   };
 
-  // ── Care plan: final payment received (or the stage says so) ──────────────
+  // ── Maintenance & Hosting: final payment received (or the stage says so) ──
   if (paid("final_payment") || floor >= STAGE_ORDER.final_paid) {
     const openRenewal = open("annual_renewal");
     if (openRenewal) return waitingOn(openRenewal, "Renewal");
@@ -122,7 +122,7 @@ export function computeNextStep(x: StepInputs, from: string): NextStep {
         section: 6,
         owner: "you",
         title: days < 0 ? `Renewal was ${plural(Math.abs(days), "day")} ago — invoice it` : `Renewal in ${plural(days, "day")} — invoice it`,
-        detail: "The annual care plan, billed at the agreement's yearly value.",
+        detail: "Maintenance & Hosting for the year, billed at the agreement's yearly price.",
         action,
         href: action.href,
       };
@@ -132,7 +132,7 @@ export function computeNextStep(x: StepInputs, from: string): NextStep {
       owner: "none",
       title: "Active — nothing due",
       detail: x.renewalDate
-        ? `Care plan renews ${shortDate(x.renewalDate + "T00:00:00")}.`
+        ? `Maintenance & Hosting renews ${shortDate(x.renewalDate + "T00:00:00")}.`
         : "Set a renewal date on the client so the Hub can remind you.",
       href: at(6),
     };

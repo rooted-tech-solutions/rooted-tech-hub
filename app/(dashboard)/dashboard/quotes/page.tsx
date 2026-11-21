@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { StatusBadge } from "./statusBadge";
 import { fmtMoney } from "./lineItems";
+import { maintenanceOf } from "./maintenance";
 
 function fmtDate(value: string | null) {
   if (!value) return "—";
@@ -24,6 +25,7 @@ export default async function QuotesPage() {
     title: string;
     build_total: number | null;
     monthly_retainer: number | null;
+    maintenance_annual?: number | null;
     status: string;
     issued_date: string | null;
     expiry_date: string | null;
@@ -32,7 +34,7 @@ export default async function QuotesPage() {
 
   const { data: quotes } = (await supabase
     .from("quotes")
-    .select("id, title, build_total, monthly_retainer, status, issued_date, expiry_date, clients(name, company)")
+    .select("*, clients(name, company)") // "*": maintenance_annual exists only once migration 011 has run
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })) as unknown as { data: QuoteRow[] | null };
 
@@ -71,7 +73,7 @@ export default async function QuotesPage() {
                 <th className="px-5 py-3 font-medium">Title</th>
                 <th className="px-5 py-3 font-medium">Client</th>
                 <th className="px-5 py-3 font-medium">Build Cost</th>
-                <th className="px-5 py-3 font-medium">Monthly Retainer</th>
+                <th className="px-5 py-3 font-medium">Maintenance &amp; Hosting</th>
                 <th className="px-5 py-3 font-medium">Status</th>
                 <th className="px-5 py-3 font-medium">Issued</th>
                 <th className="px-5 py-3 font-medium">Expires</th>
@@ -93,7 +95,7 @@ export default async function QuotesPage() {
                   </td>
                   <td className="px-5 py-3 text-gray-600">{quote.clients?.company || quote.clients?.name || "—"}</td>
                   <td className="px-5 py-3 text-gray-600">{fmtMoney(quote.build_total)}</td>
-                  <td className="px-5 py-3 text-gray-600">{fmtMoney(quote.monthly_retainer)}</td>
+                  <td className="px-5 py-3 text-gray-600">{fmtMoney(maintenanceOf(quote).annual)}<span className="text-gray-400">/yr</span></td>
                   <td className="px-5 py-3">
                     <StatusBadge status={quote.status} />
                   </td>

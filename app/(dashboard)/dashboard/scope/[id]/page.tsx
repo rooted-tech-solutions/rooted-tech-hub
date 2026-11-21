@@ -8,6 +8,7 @@ import { backLink } from "../../backLink";
 import { deleteSowRecord, updateSowStatus } from "../actions";
 import PrintButton from "@/components/ui/PrintButton";
 import type { SowItem } from "../actions";
+import { scopeChangePolicy } from "../../contracts/contractTerms";
 
 function fmtDate(val: string | null) {
   if (!val) return "—";
@@ -191,7 +192,7 @@ export default async function SowDetailPage({
           <div className="bg-brand-cream border border-brand-light rounded-lg px-5 py-4">
             <p className="text-xs font-semibold text-brand-dark uppercase tracking-wide mb-1.5">Scope Change Policy</p>
             <p className="text-sm text-gray-600 leading-relaxed">
-              Any work requested outside the deliverables listed above — or beyond the allocated monthly hours defined in the accompanying service agreement — is considered a scope change. Scope changes will be assessed, quoted in writing, and require written approval before work begins. Rooted Tech Solutions will not perform out-of-scope work without a signed change order.
+              {scopeChangePolicy()}
             </p>
           </div>
 

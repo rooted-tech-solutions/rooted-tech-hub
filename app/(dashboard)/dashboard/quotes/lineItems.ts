@@ -25,10 +25,6 @@ export function fmtMoney(amount: number | null | undefined) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount ?? 0);
 }
 
-export function annualValue(monthlyRetainer: number | null | undefined) {
-  return (monthlyRetainer ?? 0) * 12;
-}
-
 export function daysUntil(dateStr: string | null | undefined): number | null {
   if (!dateStr) return null;
   const target = new Date(dateStr + "T00:00:00");

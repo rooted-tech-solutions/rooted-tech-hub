@@ -41,10 +41,10 @@ export default function TermsPage() {
         <Bullets
           items={[
             "A scope of work document setting out exactly what is being built, what is excluded, and what you need to provide.",
-            "A fixed quote covering the build, and where applicable a monthly care plan covering ongoing maintenance.",
+            "A fixed quote covering the build, and Maintenance & Hosting covering ongoing upkeep, priced per year.",
             "Payment split into a deposit due on signing and a final payment due on delivery and acceptance.",
             "Work outside the agreed scope quoted separately and approved before it is started.",
-            "Care plans renewing annually, cancellable by either side with 30 days' written notice.",
+            "Maintenance & Hosting renewing annually, cancellable by either side with 30 days' written notice.",
           ]}
         />
         <p>

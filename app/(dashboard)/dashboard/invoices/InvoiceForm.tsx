@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { addDaysISO, todayISO } from "@/lib/dates";
+import { maintenanceOf } from "../quotes/maintenance";
 
 type Client = { id: string; name: string; company: string | null };
 type Quote = {
@@ -13,6 +14,7 @@ type Quote = {
   scope: string | null;
   build_total: number | null;
   monthly_retainer: number | null;
+  maintenance_annual?: number | null;
   kind?: string | null;
 };
 
@@ -43,9 +45,9 @@ const STATUSES = [
 ];
 
 const INVOICE_TYPES = [
-  { value: "deposit", label: "Deposit (50% of build + year 1 maintenance)" },
-  { value: "final_payment", label: "Final Payment (50% of build + year 1 maintenance)" },
-  { value: "annual_renewal", label: "Annual Renewal (maintenance only)" },
+  { value: "deposit", label: "Deposit (50% of build + year 1 Maintenance & Hosting)" },
+  { value: "final_payment", label: "Final Payment (50% of build + year 1 Maintenance & Hosting)" },
+  { value: "annual_renewal", label: "Annual Renewal (Maintenance & Hosting only)" },
   { value: "custom", label: "Custom Amount" },
 ];
 
@@ -60,7 +62,7 @@ function termsFor(quote: Quote | null, contractTerms: Record<string, ContractTer
   if (!quote) return null;
   const frozen = contractTerms[quote.id];
   if (frozen) return { build: frozen.build_total, annual: frozen.annual_value, source: "agreement" as const };
-  return { build: quote.build_total ?? 0, annual: (quote.monthly_retainer ?? 0) * 12, source: "quote" as const };
+  return { build: quote.build_total ?? 0, annual: maintenanceOf(quote).annual, source: "quote" as const };
 }
 
 function computeAmount(type: string, quote: Quote | null, contractTerms: Record<string, ContractTerms>): string {
@@ -94,7 +96,7 @@ function typeLabel(type: string, quote: Quote | null, contractTerms: Record<stri
     case "final_payment":
       return `${from}: 50% of ${fmt(contractTotal)} = ${fmt(contractTotal / 2)}`;
     case "annual_renewal":
-      return `${from}: ${fmt(terms.annual / 12)}/mo × 12 = ${fmt(terms.annual)}`;
+      return `${from}: Maintenance & Hosting, ${fmt(terms.annual)}/yr`;
     default:
       return "";
   }

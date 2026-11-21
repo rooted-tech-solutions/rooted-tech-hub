@@ -172,9 +172,10 @@ export async function deleteClientRecord(id: string) {
 }
 
 /**
- * Care plan hours (migration 010). The agreement allocates N hours a month;
- * this is the log that says how many were used, so the overage clause can be
- * invoked with a straight face and renewal conversations start from facts.
+ * Maintenance hours (migration 010, table care_hours). Agreements written
+ * under the old care plan allocate N hours a month; newer Maintenance &
+ * Hosting agreements are one yearly price. Either way this log says how much
+ * time the client actually took, so renewal conversations start from facts.
  */
 export async function addCareHoursFromForm(formData: FormData) {
   const clientId = String(formData.get("client_id") ?? "");
@@ -197,7 +198,7 @@ export async function addCareHoursFromForm(formData: FormData) {
       userId: user.id,
       clientId,
       kind: "care_hours_logged",
-      summary: `Logged ${hours} care-plan hour${hours === 1 ? "" : "s"}${note ? ` — ${note}` : ""}`,
+      summary: `Logged ${hours} maintenance hour${hours === 1 ? "" : "s"}${note ? ` — ${note}` : ""}`,
       refType: "client",
       refId: clientId,
     });

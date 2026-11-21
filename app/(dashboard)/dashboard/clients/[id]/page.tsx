@@ -11,10 +11,11 @@ import {
   updateClientNotesFromForm,
   updateClientStageFromForm,
 } from "../actions";
-import type { ContractSnapshot } from "../../contracts/contractTerms";
+import { isLegacyCarePlan, type ContractSnapshot } from "../../contracts/contractTerms";
 import { todayISO } from "@/lib/dates";
 import { StatusBadge } from "../../quotes/statusBadge";
-import { annualValue, fmtMoney, renewalLabel } from "../../quotes/lineItems";
+import { fmtMoney, renewalLabel } from "../../quotes/lineItems";
+import { MAINTENANCE_LABEL, maintenanceOf, maintenanceOfSnapshot } from "../../quotes/maintenance";
 import { computeLifecycle, LIFECYCLE_STEPS, STAGE_ORDER } from "../lifecycle";
 import { computeNextStep, daysUntil } from "../nextStep";
 import { deleteQuoteRecord, updateQuoteStatus } from "../../quotes/actions";
@@ -45,6 +46,7 @@ type QuoteRow = {
   client_id: string | null;
   build_total: number | null;
   monthly_retainer: number | null;
+  maintenance_annual?: number | null;
   issued_date: string | null;
   project_name: string | null;
   // Present once migrations 009/010 have run; the query uses select("*") so
@@ -228,7 +230,7 @@ export default async function ClientDetailPage({
     .order("created_at", { ascending: false })
     .limit(40);
   const events = (eventsRaw ?? []) as EventRow[];
-  // Care plan hours (migration 010) — only meaningful once an agreement exists.
+  // Maintenance hours (migration 010, care_hours) — only meaningful once an agreement exists.
   const { data: careRaw } = await supabase
     .from("care_hours")
     .select("id, month, hours, note, created_at")
@@ -271,16 +273,19 @@ export default async function ClientDetailPage({
   const contract = contracts[0] ?? null;
   const packageQuoteId = contract?.quote_id ?? proposals[0]?.id ?? null;
 
-  // Care plan: the agreement's monthly allocation vs. what has been logged this month.
+  // Maintenance & Hosting: what the agreement charges per year, and the hours
+  // logged against it. Agreements from the old care plan also allocate a
+  // monthly number of hours, which this month's log is measured against.
   const snapshot = (contract as unknown as { snapshot?: Partial<ContractSnapshot> } | null)?.snapshot;
-  const allocatedHours = Number(snapshot?.monthly_hours ?? 0);
+  const allocatedHours = isLegacyCarePlan(snapshot) ? Number(snapshot?.monthly_hours ?? 0) : 0;
+  const agreementAnnual = maintenanceOfSnapshot(snapshot).annual;
   const thisMonth = todayISO().slice(0, 7);
   const usedThisMonth = careEntries.filter((e) => e.month.startsWith(thisMonth)).reduce((s, e) => s + Number(e.hours), 0);
   const overAllocation = allocatedHours > 0 && usedThisMonth > allocatedHours;
   const monthLabel = (ym: string) => new Date(ym.slice(0, 7) + "-01T00:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" });
   const signLink = contract ? signLinkFor(contract.sign_token) : null;
 
-  const contractTotal = (q: QuoteRow) => (q.build_total ?? 0) + annualValue(q.monthly_retainer);
+  const contractTotal = (q: QuoteRow) => (q.build_total ?? 0) + maintenanceOf(q).annual;
   const paidOf = (type: string) => invoices.some((i) => i.invoice_type === type && i.status === "paid");
   const anyOf = (type: string) => invoices.some((i) => i.invoice_type === type && i.status !== "cancelled");
   const newInvoiceHref = (type: string) =>
@@ -680,7 +685,7 @@ export default async function ClientDetailPage({
           }
         >
           {proposals.length === 0 ? (
-            <p className="text-sm text-gray-400">One price for the build plus the monthly care plan.</p>
+            <p className="text-sm text-gray-400">One price for the build plus a yearly price for {MAINTENANCE_LABEL}.</p>
           ) : (
             <ul className="divide-y divide-brand-light">
               {proposals.map((quote) => {
@@ -700,7 +705,7 @@ export default async function ClientDetailPage({
                         <p className="text-sm font-medium text-brand-dark transition-colors group-hover:text-brand-mid">{quote.title}</p>
                       </Link>
                       <p className="mt-0.5 text-[11px] text-gray-400">
-                        {fmtMoney(quote.build_total)} build · {fmtMoney(quote.monthly_retainer)}/mo · {fmtMoney(contractTotal(quote))} total
+                        {fmtMoney(quote.build_total)} build · {fmtMoney(maintenanceOf(quote).annual)}/yr maintenance &amp; hosting · {fmtMoney(contractTotal(quote))} total
                       </p>
                       <Stamps items={[["Sent", quote.sent_at], ["Accepted", quote.accepted_at], ["Declined", quote.declined_at]]} />
                     </div>
@@ -1073,15 +1078,19 @@ export default async function ClientDetailPage({
           )}
         </Step>
 
-        {/* 7 · Care plan — the fifth public step, "It keeps working" */}
+        {/* 7 · Maintenance & Hosting — the fifth public step, "It keeps working" */}
         {contract?.status === "signed" && (
           <Step
             n={7}
-            title="Care plan"
+            title={MAINTENANCE_LABEL}
             current={false}
             summary={
               <span className="text-[11px] text-gray-400">
-                {allocatedHours > 0 ? `${allocatedHours} hours a month in the agreement` : "No monthly hours in the agreement"}
+                {allocatedHours > 0
+                  ? `${allocatedHours} hours a month in the agreement`
+                  : agreementAnnual > 0
+                    ? `${fmtMoney(agreementAnnual)}/yr in the agreement`
+                    : "Not priced in the agreement"}
               </span>
             }
           >
@@ -1090,15 +1099,17 @@ export default async function ClientDetailPage({
                 <div className="flex items-baseline justify-between gap-4">
                   <p className="text-sm font-semibold text-brand-dark">{monthLabel(thisMonth)}</p>
                   <p className={`text-sm ${overAllocation ? "font-semibold text-red-700" : "text-brand-dark"}`}>
-                    {usedThisMonth} of {allocatedHours} h used
+                    {allocatedHours > 0 ? `${usedThisMonth} of ${allocatedHours} h used` : `${usedThisMonth} h logged`}
                   </p>
                 </div>
-                <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-100">
-                  <div
-                    className={`h-2 rounded-full ${overAllocation ? "bg-red-500" : "bg-brand-mid"}`}
-                    style={{ width: `${allocatedHours > 0 ? Math.min(100, (usedThisMonth / allocatedHours) * 100) : 0}%` }}
-                  />
-                </div>
+                {allocatedHours > 0 && (
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-100">
+                    <div
+                      className={`h-2 rounded-full ${overAllocation ? "bg-red-500" : "bg-brand-mid"}`}
+                      style={{ width: `${Math.min(100, (usedThisMonth / allocatedHours) * 100)}%` }}
+                    />
+                  </div>
+                )}
                 {overAllocation && (
                   <p className="mt-1.5 text-xs text-red-700">
                     Over the monthly allocation. The agreement says extra work is quoted separately — a change order, not a favour.

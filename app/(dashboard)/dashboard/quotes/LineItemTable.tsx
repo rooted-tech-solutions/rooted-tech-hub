@@ -19,7 +19,7 @@ export default function LineItemTable({
   subtotalLabel: string;
   defaultRate?: number;
   onSubtotalChange?: (subtotal: number) => void;
-  variant?: "build" | "maintenance";
+  variant?: "build";
 }) {
   const [rows, setRows] = useState<LineItem[]>(initialItems);
 
@@ -163,17 +163,6 @@ export default function LineItemTable({
                 </td>
                 <td className="px-3 py-1.5 text-right text-[10px] font-medium text-brand-mid">
                   {totalWeeks.toFixed(1)} weeks
-                </td>
-                <td />
-              </tr>
-            )}
-            {variant === "maintenance" && subtotal > 0 && (
-              <tr className="border-t border-brand-light/60 bg-brand-cream/60">
-                <td colSpan={4} className="px-3 py-1.5 text-right text-[10px] text-gray-500 italic">
-                  Annual total (×12)
-                </td>
-                <td className="px-3 py-1.5 text-right text-[10px] font-medium text-brand-mid">
-                  {fmtMoney(subtotal * 12)}/yr
                 </td>
                 <td />
               </tr>

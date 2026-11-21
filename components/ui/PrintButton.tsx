@@ -5,7 +5,7 @@ export default function PrintButton({ label = "Download PDF" }: { label?: string
     <button
       type="button"
       onClick={() => window.print()}
-      className="bg-brand-cream text-brand-dark text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand-light border border-brand-light transition-colors flex items-center gap-2"
+      className="bg-brand-cream text-brand-dark text-sm font-medium px-4 py-2 rounded-lg hover:bg-brand-light border border-brand-light transition-colors flex items-center gap-2 whitespace-nowrap flex-shrink-0"
     >
       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}

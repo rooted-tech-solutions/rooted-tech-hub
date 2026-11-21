@@ -43,11 +43,9 @@ function summaryRows(snapshot: PackageEmailInput["snapshot"]): [string, string][
   const rows: [string, string][] = [];
   if (snapshot.project_name) rows.push(["Project", snapshot.project_name]);
   const build = Number(snapshot.build_total ?? 0);
-  const monthly = Number(snapshot.monthly_retainer ?? 0);
-  const hours = Number(snapshot.monthly_hours ?? 0);
+  const annual = Number(snapshot.annual_value ?? Number(snapshot.monthly_retainer ?? 0) * 12);
   if (build > 0) rows.push(["Build", money(build)]);
-  if (monthly > 0) rows.push(["Care plan", `${money(monthly)} / month${hours > 0 ? ` · ${hours} hrs` : ""}`]);
-  const annual = Number(snapshot.annual_value ?? monthly * 12);
+  if (annual > 0) rows.push(["Maintenance & Hosting", `${money(annual)} / year`]);
   if (build > 0 && annual > 0) rows.push(["First year", money(build + annual)]);
   return rows;
 }

@@ -71,7 +71,7 @@ const PROCESS = [
   {
     step: "05",
     title: "It keeps working",
-    body: "A monthly care plan covers hosting, security updates, backups, and support, so the thing you paid for does not quietly rot.",
+    body: "Maintenance & Hosting covers hosting, security updates, backups, and support for one yearly price, so the thing you paid for does not quietly rot.",
   },
 ] as const;
 
@@ -266,7 +266,7 @@ export default function MarketingHome() {
       </section>
 
       {/* ---------------------------------------------------------------- */}
-      {/* Care plans — the one warm band on the page                        */}
+      {/* Maintenance & Hosting — the one warm band on the page             */}
       {/* ---------------------------------------------------------------- */}
       <section className="relative overflow-hidden bg-site-sand py-24 lg:py-32">
         <div className="pointer-events-none absolute -right-32 -top-32 h-[30rem] w-[30rem] rounded-full bg-site-clay/10 blur-3xl" />
@@ -274,13 +274,12 @@ export default function MarketingHome() {
         <div className="relative mx-auto max-w-6xl px-6 lg:px-8">
           <div className="grid items-center gap-14 lg:grid-cols-2 lg:gap-20">
             <div>
-              <Eyebrow>Care plans</Eyebrow>
+              <Eyebrow>Maintenance &amp; Hosting</Eyebrow>
               <h2 className={h2Class}>And then it keeps working</h2>
               <p className="mt-5 text-lg leading-relaxed text-site-body">
                 Plenty of businesses have paid for software that broke six months later with
-                nobody left to call. Every build comes with the option of a monthly care plan —
-                a set number of hours each month, covering the unglamorous work that keeps
-                software alive.
+                nobody left to call. Every build comes with Maintenance &amp; Hosting — one
+                yearly price covering the unglamorous work that keeps software alive.
               </p>
               <p className="mt-4 text-lg leading-relaxed text-site-body">
                 It renews annually, and you can cancel with 30 days&rsquo; notice.{" "}
@@ -291,10 +290,10 @@ export default function MarketingHome() {
             <div className="rounded-3xl bg-white p-8 shadow-lift ring-1 ring-site-clay/10 sm:p-10">
               <div className="flex items-center justify-between gap-4">
                 <p className="text-xs font-semibold uppercase tracking-wider text-site-mute">
-                  Every care plan includes
+                  Maintenance &amp; Hosting includes
                 </p>
                 <span className="rounded-full bg-site-sand px-3 py-1 text-xs font-semibold text-site-clay">
-                  Monthly
+                  Billed yearly
                 </span>
               </div>
               <ul className="mt-6 space-y-4">

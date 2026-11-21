@@ -9,8 +9,8 @@ import { fmtMoney } from "../quotes/lineItems";
  *
  * The owner's "Mark paid" button calls this with their session client; the
  * Stripe webhook calls it with the service-role client and the invoice's own
- * user_id. Both paths must agree on the care-plan arithmetic, so it lives here:
- * a final payment starts the plan one year from the payment date, and a
+ * user_id. Both paths must agree on the renewal arithmetic, so it lives here:
+ * a final payment starts Maintenance & Hosting one year from the payment date, and a
  * renewal payment extends it one year from the existing renewal date.
  */
 export async function applyInvoicePaid(

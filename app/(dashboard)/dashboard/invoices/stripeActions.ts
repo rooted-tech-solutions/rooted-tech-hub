@@ -136,7 +136,7 @@ export async function sendInvoiceViaStripe(invoiceId: string, from?: string) {
       const paymentLabel: Record<string, string> = {
         deposit: "Deposit — 50% of the agreement, due on signing",
         final_payment: "Final payment — balance due on delivery and acceptance",
-        annual_renewal: "Annual care plan renewal",
+        annual_renewal: "Annual Maintenance & Hosting renewal",
       };
       const kind = paymentLabel[invoice.invoice_type ?? ""] ?? null;
 
